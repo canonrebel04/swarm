@@ -27,6 +27,21 @@ class AgentManager:
     def __init__(self):
         self._agents: Dict[str, AgentInfo] = {}
         self._lock = asyncio.Lock()
+        self._on_spawn_callbacks = []
+        self._on_state_change_callbacks = []
+        self._on_kill_callbacks = []
+
+    def register_spawn_callback(self, callback):
+        """Register a callback to be called when an agent is spawned."""
+        self._on_spawn_callbacks.append(callback)
+
+    def register_state_change_callback(self, callback):
+        """Register a callback to be called when an agent's state changes."""
+        self._on_state_change_callbacks.append(callback)
+
+    def register_kill_callback(self, callback):
+        """Register a callback to be called when an agent is killed."""
+        self._on_kill_callbacks.append(callback)
 
     async def spawn_agent(self, config: AgentConfig) -> str:
         """
@@ -66,6 +81,13 @@ class AgentManager:
         async with self._lock:
             self._agents[session_id] = agent_info
         
+        # Call spawn callbacks
+        for callback in self._on_spawn_callbacks:
+            try:
+                callback(agent_info.status)
+            except Exception:
+                pass  # Don't let callback failures break the spawn
+        
         return session_id
 
     async def get_agent_status(self, session_id: str) -> Optional[AgentStatus]:
@@ -86,8 +108,21 @@ class AgentManager:
             # Get fresh status from runtime
             try:
                 fresh_status = await agent_info.runtime_instance.get_status(session_id)
+                
+                # Check if state actually changed
+                state_changed = fresh_status.state != agent_info.status.state
+                
                 agent_info.status = fresh_status
                 agent_info.last_updated = asyncio.get_event_loop().time()
+                
+                # Call state change callbacks if state changed
+                if state_changed:
+                    for callback in self._on_state_change_callbacks:
+                        try:
+                            callback(fresh_status)
+                        except Exception:
+                            pass  # Don't let callback failures break status updates
+                
                 return fresh_status
             except Exception:
                 return agent_info.status
@@ -131,6 +166,14 @@ class AgentManager:
             
             try:
                 await agent_info.runtime_instance.kill(session_id)
+                
+                # Call kill callbacks before removing from agents dict
+                for callback in self._on_kill_callbacks:
+                    try:
+                        callback(agent_info.status)
+                    except Exception:
+                        pass  # Don't let callback failures break the kill
+                
                 del self._agents[session_id]
                 return True
             except Exception:

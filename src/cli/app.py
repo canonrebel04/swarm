@@ -137,5 +137,15 @@ def runtimes():
         typer.echo("No runtimes available")
 
 
+@app.command()
+def tui():
+    """Launch the PolyglotSwarm Textual user interface."""
+    from ..tui.app import PolyglotSwarmApp
+    
+    typer.echo("Launching PolyglotSwarm TUI...")
+    app = PolyglotSwarmApp()
+    app.run()
+
+
 if __name__ == "__main__":
     app()

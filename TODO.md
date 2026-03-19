@@ -75,15 +75,16 @@
 - [ ] Implement drift detection alerts
 
 ## 🎨 TUI Development
-- [ ] Set up Textual app structure in `src/tui/app.py`
-- [ ] Create overseer chat panel with message history
-- [ ] Build agent fleet status table with sorting/filtering
-- [ ] Implement selected agent output viewer
+- [x] Set up Textual app structure in `src/tui/app.py`
+- [x] Create overseer chat panel with message history
+- [x] Build agent fleet status table with sorting/filtering
+- [x] Implement selected agent output viewer
+- [x] Create CSS styling for TUI components
 - [ ] Add event log panel for system events
 - [ ] Create role contract viewer
 - [ ] Implement drift/stall warning indicators
 - [ ] Add action buttons (nudge, retry, kill)
-- [ ] Create CSS styling for TUI components
+- [ ] Integrate TUI with orchestrator components (show real data)
 
 ## 🔧 Orchestrator Components
 - [ ] Implement overseer logic in `src/orchestrator/overseer.py`
@@ -105,6 +106,7 @@
 - [x] Implement `swarm doctor` diagnostic command
 - [x] Implement `swarm roles` management command
 - [x] Implement `swarm runtimes` management command
+- [x] Implement `swarm tui` command for launching the interface
 
 ## 📝 Configuration
 - [x] Create config.yaml template

@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
-"""
-Console script entry point for PolyglotSwarm.
-"""
+#!/usr/bin/env bash
+# Console script entry point for PolyglotSwarm.
 
-from src.main import app
-
-if __name__ == "__main__":
-    app()
+# Activate virtual environment and run Python module
+cd "$(dirname "$0")"
+source venv/bin/activate
+python -m src.main "$@"
