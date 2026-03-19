@@ -18,6 +18,8 @@ class Watchdog:
         self._last_activity: Dict[str, datetime] = {}
         self._monitoring = False
         self._monitor_task = None
+        self._on_nudge_callbacks = []
+        self._on_respawn_callbacks = []
 
     async def start_monitoring(self):
         """Start monitoring agents."""
@@ -71,8 +73,40 @@ class Watchdog:
                 time_since_activity = (current_time - last_activity).total_seconds()
                 if time_since_activity > self.stall_timeout:
                     print(f"⚠️  Agent {agent.name} appears stalled (no activity for {time_since_activity:.1f}s)")
-                    # In a real implementation, we might nudge or restart the agent
-                    # await self._handle_stalled_agent(agent)
+                    # Trigger nudge callbacks
+                    for callback in self._on_nudge_callbacks:
+                        try:
+                            callback(agent.name, time_since_activity)
+                        except Exception:
+                            pass  # Don't let callback failures break the watchdog
+                    
+                    # Nudge the agent (in a real implementation, this would send a signal)
+                    print(f"🔄  Nudging agent {agent.name}")
+                    
+                    # Track failed nudges and potentially respawn
+                    failed_nudges = getattr(agent, 'failed_nudges', 0) + 1
+                    if failed_nudges >= 3:  # Respawn after 3 failed nudges
+                        print(f"🔥  Respawn agent {agent.name} after {failed_nudges} failed nudges")
+                        # Trigger respawn callback
+                        for callback in self._on_respawn_callbacks:
+                            try:
+                                callback(agent.name, failed_nudges)
+                            except Exception:
+                                pass  # Don't let callback failures break the watchdog
+                        
+                        # Reset nudge counter
+                        failed_nudges = 0
+                    
+                    # Update agent with failed nudge count (simulated)
+                    agent.failed_nudges = failed_nudges
+
+    def register_nudge_callback(self, callback):
+        """Register a callback to be called when an agent is nudged."""
+        self._on_nudge_callbacks.append(callback)
+
+    def register_respawn_callback(self, callback):
+        """Register a callback to be called when an agent is respawned."""
+        self._on_respawn_callbacks.append(callback)
 
     async def register_agent_activity(self, agent_name: str):
         """Register that an agent has been active."""

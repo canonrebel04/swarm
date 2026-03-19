@@ -126,6 +126,13 @@ class EchoRuntime(AgentRuntime):
             # Clean up session
             del self._sessions[session_id]
 
+    async def _set_state(self, session_id: str, state: str) -> None:
+        """Set the state of an agent (for testing purposes)."""
+        if session_id in self._sessions:
+            session = self._sessions[session_id]
+            session['status'].state = state
+            session['status'].last_output = f"State changed to {state}"
+
 
 # Register the echo runtime
 def register_echo_runtime():

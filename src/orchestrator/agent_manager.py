@@ -222,6 +222,22 @@ class AgentManager:
         async with self._lock:
             return len(self._agents)
 
+    async def get_session_id_by_name(self, agent_name: str) -> Optional[str]:
+        """
+        Get session ID for an agent by name.
+        
+        Args:
+            agent_name: Name of the agent
+            
+        Returns:
+            Session ID if found, None otherwise
+        """
+        async with self._lock:
+            for session_id, agent_info in self._agents.items():
+                if agent_info.status.name == agent_name:
+                    return session_id
+            return None
+
     async def cleanup_all(self) -> None:
         """Terminate all active agents."""
         # Make a copy of the keys to avoid modifying dict during iteration

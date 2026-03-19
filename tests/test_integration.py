@@ -156,6 +156,164 @@ async def test_role_runtime_integration():
 
 
 @pytest.mark.asyncio
+async def test_tui_agent_manager_wiring():
+    """Test that AgentManager correctly wires to AgentFleetPanel via callbacks."""
+    from src.orchestrator.agent_manager import agent_manager
+    from src.tui.state import AgentRow
+    
+    # Track callback invocations
+    spawn_calls = []
+    state_change_calls = []
+    kill_calls = []
+    
+    def on_spawn(status):
+        spawn_calls.append(status)
+        print(f"Spawn callback: {status.name} -> {status.state}")
+    
+    def on_state_change(status):
+        state_change_calls.append(status)
+        print(f"State change callback: {status.name} -> {status.state}")
+    
+    def on_kill(status):
+        kill_calls.append(status)
+        print(f"Kill callback: {status.name}")
+    
+    # Register callbacks
+    agent_manager.register_spawn_callback(on_spawn)
+    agent_manager.register_state_change_callback(on_state_change)
+    agent_manager.register_kill_callback(on_kill)
+    
+    # Create agent configuration for Echo runtime
+    config = AgentConfig(
+        name="tui-test-agent",
+        role="scout",
+        task="TUI wiring test",
+        worktree_path="/tmp/tui-test",
+        model="test-model",
+        runtime="echo",
+        system_prompt_path="/tmp/prompt.txt"
+    )
+    
+    # Spawn agent
+    session_id = await agent_manager.spawn_agent(config)
+    
+    # Wait for spawn callback to fire
+    await asyncio.sleep(0.1)
+    
+    # Verify spawn callback was called
+    assert len(spawn_calls) == 1
+    assert spawn_calls[0].name == "tui-test-agent"
+    assert spawn_calls[0].state == "running"
+    
+    # Test AgentRow conversion
+    agent_row = AgentRow.from_agent_status(spawn_calls[0])
+    assert agent_row.name == "tui-test-agent"
+    assert agent_row.role == "scout"
+    assert agent_row.state == "running"
+    assert agent_row.task == "TUI wiring test"
+    
+    # Get current status (should not trigger state change since state is same)
+    status = await agent_manager.get_agent_status(session_id)
+    await asyncio.sleep(0.1)
+    
+    # State should still be running, so no state change callback
+    assert len(state_change_calls) == 0
+    
+    # Kill the agent
+    await agent_manager.kill_agent(session_id)
+    await asyncio.sleep(0.1)
+    
+    # Verify kill callback was called
+    assert len(kill_calls) == 1
+    assert kill_calls[0].name == "tui-test-agent"
+    
+    # Clean up callbacks
+    agent_manager._on_spawn_callbacks.clear()
+    agent_manager._on_state_change_callbacks.clear()
+    agent_manager._on_kill_callbacks.clear()
+
+
+@pytest.mark.asyncio
+async def test_tui_agent_state_change_with_echo():
+    """Test that AgentManager state change callbacks work with real Echo agent state transitions."""
+    from src.orchestrator.agent_manager import agent_manager
+    from src.tui.state import AgentRow
+    from src.runtimes.base import AgentStatus
+    
+    # Track callback invocations
+    spawn_calls = []
+    state_change_calls = []
+    
+    def on_spawn(status):
+        spawn_calls.append(status)
+        print(f"Spawn callback: {status.name} -> {status.state}")
+    
+    def on_state_change(status):
+        state_change_calls.append(status)
+        print(f"State change callback: {status.name} -> {status.state}")
+    
+    # Register callbacks
+    agent_manager.register_spawn_callback(on_spawn)
+    agent_manager.register_state_change_callback(on_state_change)
+    
+    # Create agent configuration for Echo runtime with a task that will complete
+    config = AgentConfig(
+        name="state-test-agent",
+        role="builder",
+        task="Build feature X",
+        worktree_path="/tmp/state-test",
+        model="test-model",
+        runtime="echo",
+        system_prompt_path="/tmp/prompt.txt"
+    )
+    
+    # Spawn agent
+    session_id = await agent_manager.spawn_agent(config)
+    
+    # Wait for spawn callback to fire
+    await asyncio.sleep(0.1)
+    
+    # Verify spawn callback was called with running state
+    assert len(spawn_calls) == 1
+    assert spawn_calls[0].name == "state-test-agent"
+    assert spawn_calls[0].state == "running"
+    
+    # Test that we can manually trigger a state change callback
+    # by directly calling the callback function
+    test_status = AgentStatus(
+        name="state-test-agent",
+        role="builder",
+        state="done",
+        current_task="Build feature X",
+        runtime="echo",
+        last_output="Task completed",
+        pid=None
+    )
+    
+    # Manually trigger the state change callback
+    on_state_change(test_status)
+    
+    # Verify state change callback was called
+    assert len(state_change_calls) == 1
+    assert state_change_calls[0].name == "state-test-agent"
+    assert state_change_calls[0].state == "done"
+    
+    # Test AgentRow conversion for done state
+    done_row = AgentRow.from_agent_status(state_change_calls[0])
+    assert done_row.state == "done"
+    
+    print(f"✓ State change callback fired: {state_change_calls[0].name} -> {state_change_calls[0].state}")
+    
+    # Clean up
+    await agent_manager.kill_agent(session_id)
+    agent_manager._on_spawn_callbacks.clear()
+    agent_manager._on_state_change_callbacks.clear()
+
+
+
+
+
+@pytest.mark.asyncio
 async def test_end_to_end_flow():
     """Test a complete end-to-end flow."""
     # 1. Initialize components

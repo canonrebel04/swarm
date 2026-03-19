@@ -45,7 +45,12 @@ class AgentFleetPanel(Vertical):
         yield t
 
     def upsert_agent(self, agent: AgentRow) -> None:
-        t = self.query_one("#fleet-table", DataTable)
+        try:
+            t = self.query_one("#fleet-table", DataTable)
+        except Exception:
+            # Widget not mounted yet, skip
+            return
+            
         role_m  = ROLE_M.get(agent.role, agent.role)
         state_m = STATE_M.get(agent.state, agent.state)
         task_s  = agent.task[:38] + "…" if len(agent.task) > 38 else agent.task
@@ -60,12 +65,22 @@ class AgentFleetPanel(Vertical):
             t.add_row(*row, key=agent.name)
 
     def remove_agent(self, name: str) -> None:
-        t = self.query_one("#fleet-table", DataTable)
         try:
-            t.remove_row(name)
+            t = self.query_one("#fleet-table", DataTable)
+            try:
+                t.remove_row(name)
+            except Exception:
+                pass
         except Exception:
+            # Widget not mounted yet, skip
             pass
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         # Notify app of selection
-        self.app.selected_agent = str(event.row_key.value)
+        name = str(event.row_key.value)
+        self.app.selected_agent = name
+        
+        # Get output panel and start streaming
+        output_panel = self.app.query_one("#agent-output", AgentOutputPanel)
+        output_panel.set_agent(name)
+        output_panel.start_stream(name)

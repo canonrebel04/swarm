@@ -26,6 +26,7 @@ ICONS = {
 
 class OverseerChatPanel(Vertical):
     thinking: reactive[bool] = reactive(False)
+    messages: list = []
 
     def compose(self) -> ComposeResult:
         yield Label("◈  OVERSEER CONSOLE", classes="panel--title panel--title-cyan")
@@ -51,27 +52,55 @@ class OverseerChatPanel(Vertical):
         if not text:
             return
         event.input.clear()
-        self._write_message("user", text)
-        self.thinking = True
-        self._send(text)
+        self.add_message("user", text)
+        
+        # Push user input event
+        if hasattr(self, 'app') and hasattr(self.app, 'push_swarm_event'):
+            message_preview = text[:60] + "…" if len(text) > 60 else text
+            self.app.push_swarm_event("info", "user", message_preview)
+        
+        # Stream the response
+        self.stream_response(text)
+
+    def add_message(self, sender: str, text: str) -> None:
+        """Add a message to the chat"""
+        self.messages.append({"sender": sender, "content": text})
+        self._write_message(sender, text)
 
     def _write_message(self, sender: str, text: str) -> None:
-        log = self.query_one("#chat-log", RichLog)
-        ts    = datetime.now().strftime("%H:%M:%S")
-        style = SENDER_STYLE.get(sender, "[dim]")
-        icon  = ICONS.get(sender, "·")
-        log.write(f"[dim]{ts}[/] {style}{icon}[/] {text}")
+        try:
+            log = self.query_one("#chat-log", RichLog)
+            ts    = datetime.now().strftime("%H:%M:%S")
+            style = SENDER_STYLE.get(sender, "[dim]")
+            icon  = ICONS.get(sender, "·")
+            log.write(f"[dim]{ts}[/] {style}{icon}[/] {text}")
+        except Exception:
+            # Widget not mounted yet, skip
+            pass
 
-    @work(exclusive=False, thread=False)
-    async def _send(self, text: str) -> None:
-        await asyncio.sleep(0)
-        # Replace with real overseer call + token streaming
-        self._write_message("overseer", "[dim]no overseer connected yet[/]")
-        self.thinking = False
+    @work(exclusive=True, thread=False)
+    async def stream_response(self, text: str) -> None:
+        """Stream the coordinator's response to user input."""
+        self.thinking = True
+        try:
+            # Get coordinator from app
+            if hasattr(self, 'app') and hasattr(self.app, 'coordinator'):
+                coordinator = self.app.coordinator
+                
+                # Stream the response token by token
+                async for token in coordinator.handle_user_input(text):
+                    self.push_token(token)
+                
+                # Add newline after streaming
+                self.push_token("\n")
+            else:
+                self.add_message("overseer", "[dim]no coordinator connected yet[/]")
+        finally:
+            self.thinking = False
 
     def push_token(self, token: str) -> None:
         log = self.query_one("#chat-log", RichLog)
         log.write(token, shrink=False, scroll_end=True)
 
     def push_system(self, msg: str) -> None:
-        self._write_message("system", msg)
+        self.add_message("system", msg)

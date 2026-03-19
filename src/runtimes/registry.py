@@ -29,6 +29,16 @@ class RuntimeRegistry:
         """Check if a runtime is available."""
         return runtime_name in self._runtimes
 
+    def list_runtimes(self) -> list[str]:
+        """List all available runtime names."""
+        return list(self._runtimes.keys())
+
+    def list_roles(self) -> list[str]:
+        """List all available role names from runtimes."""
+        # This is a simple implementation - in a real system, roles would come from a role registry
+        # For now, return some common roles
+        return ["scout", "builder", "developer", "tester"]
+
 
 # Global registry instance
 registry = RuntimeRegistry()

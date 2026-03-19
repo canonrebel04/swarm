@@ -80,11 +80,12 @@
 - [x] Build agent fleet status table with sorting/filtering
 - [x] Implement selected agent output viewer
 - [x] Create CSS styling for TUI components
-- [ ] Add event log panel for system events
-- [ ] Create role contract viewer
-- [ ] Implement drift/stall warning indicators
-- [ ] Add action buttons (nudge, retry, kill)
-- [ ] Integrate TUI with orchestrator components (show real data)
+- [x] Add event log panel for system events
+- [x] Create role contract viewer
+- [x] Implement drift/stall warning indicators
+- [x] Add action buttons (nudge, retry, kill)
+- [x] Integrate TUI with orchestrator components (show real data)
+- [x] Wire overseer input → Coordinator (stub-compatible version)
 
 ## 🔧 Orchestrator Components
 - [ ] Implement overseer logic in `src/orchestrator/overseer.py`
@@ -92,6 +93,7 @@
 - [x] Build dispatcher for agent spawning (integrated in coordinator)
 - [x] Implement agent manager for fleet tracking
 - [x] Create watchdog for health monitoring
+- [x] Build event bus wiring from orchestrator to TUI
 - [ ] Build merge manager for conflict resolution
 - [ ] Implement completion tracker
 

@@ -38,6 +38,54 @@ class Coordinator:
             "tester": 4,     # Validation
             "reviewer": 5    # Final review
         }
+        self._on_task_assigned_callbacks = []
+        self._on_handoff_callbacks = []
+
+    def register_task_assigned_callback(self, callback):
+        """Register a callback to be called when a task is assigned."""
+        self._on_task_assigned_callbacks.append(callback)
+
+    def register_handoff_callback(self, callback):
+        """Register a callback to be called when a task is handed off."""
+        self._on_handoff_callbacks.append(callback)
+    
+    def register_event_callback(self, callback):
+        """Register a callback to push events to the event log."""
+        self._push_event_callback = callback
+    
+    def trigger_handoff(self, from_agent: str, to_role: str, task_title: str):
+        """Trigger handoff callbacks when a task is handed off."""
+        for callback in self._on_handoff_callbacks:
+            try:
+                callback(from_agent, to_role, task_title)
+            except Exception:
+                pass  # Don't let callback failures break the coordinator
+    
+    async def handle_user_input(self, text: str):
+        """
+        Handle user input and decompose into tasks.
+        
+        Args:
+            text: User input text
+            
+        Yields:
+            Task decomposition result as streaming tokens
+            
+        Note: This is designed as an async generator for LLM streaming.
+        """
+        # Decompose the task
+        tasks = await self.decompose_task(text)
+        
+        # Format the response
+        task_titles = [task.title for task in tasks]
+        result = f"Decomposed into {len(tasks)} tasks: {', '.join(task_titles)}"
+        
+        # Push event about task dispatch
+        if hasattr(self, '_push_event_callback') and self._push_event_callback:
+            self._push_event_callback("info", "coordinator", f"dispatched {len(tasks)} tasks")
+        
+        # Yield the response as tokens (stub-compatible with real LLM streaming)
+        yield result
 
     async def decompose_task(self, task_description: str) -> List[TaskPacket]:
         """
