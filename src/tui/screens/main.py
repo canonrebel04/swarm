@@ -82,16 +82,21 @@ class MainScreen(Screen):
         # ── Bottom footerbar (bindings, like btop's bottom bar) ───────────
         with Horizontal(id="footerbar"):
             yield Static(
-                "^q Quit  ^k Kill  ^r Retry  ^n New  ^m Model  ^i Role  ^p Palette",
+                "^q Quit  ^k Kill  ^r Retry  ^n New  F2 Model  ^i Role  ^p Palette",
                 id="footer-bindings",
             )
             yield Static("0 agents  ·  0 events", id="footer-stats")
 
     def update_statusbar(self, agents: int, runtime: str, elapsed: str) -> None:
-        self.query_one("#status-left",  Static).update(
-            f"○ {runtime}"
-        )
-        self.query_one("#status-right", Static).update(elapsed)
-        self.query_one("#footer-stats", Static).update(
-            f"{agents} agents  ·  0 events"
-        )
+        try:
+            self.query_one("#status-left",  Static).update(f"○ {runtime}")
+        except Exception:
+            pass  # widget not ready yet
+        try:
+            self.query_one("#status-right", Static).update(elapsed)
+        except Exception:
+            pass  # widget not ready yet
+        try:
+            self.query_one("#footer-stats", Static).update(f"{agents} agents  ·  0 events")
+        except Exception:
+            pass  # widget not ready yet

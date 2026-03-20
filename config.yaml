@@ -1,0 +1,3 @@
+overseer:
+  runtime: vibe
+  model: mistral-large-latest

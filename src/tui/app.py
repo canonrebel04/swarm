@@ -27,7 +27,7 @@ class SwarmApp(App):
         Binding("ctrl+k",       "kill_selected",   "Kill",         show=True),
         Binding("ctrl+r",       "retry_selected",  "Retry",        show=True),
         Binding("ctrl+n",       "new_chat",         "New Chat",     show=True),
-        Binding("ctrl+m",       "model_selector",  "Model",        show=True),
+        Binding("f2",       "model_selector",  "Model",        show=True),
         Binding("ctrl+i",       "inspect_role",    "Role",         show=True),
         Binding("tab",          "focus_next",      "Next",         show=True),
         Binding("shift+tab",    "focus_previous",  "Prev",         show=False),
