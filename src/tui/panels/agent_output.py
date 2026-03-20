@@ -1,112 +1,113 @@
-"""
-Agent Output Panel
-"""
-
-import re
-import asyncio
-from typing import Optional
+from __future__ import annotations
+from collections import deque
 from textual.app import ComposeResult
-from textual.widgets import RichLog, Label
-from textual.containers import Vertical
-from textual import work
+from textual.widget import Widget
+from textual.widgets import Static
+from textual.reactive import reactive
+from rich.text import Text
+from rich.console import RenderableType
+import re
+
+ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\\[[0-?]*[ -/]*[@-~])")
+
+# Tool line prefixes → short colored label + icon
+TOOL_LABELS = {
+    "[bash]":    ("⬡ bash",    "dark_orange"),
+    "[read]":    ("◈ read",    "steel_blue"),
+    "[write]":   ("✎ write",   "medium_purple1"),
+    "[edit]":    ("✏ edit",    "medium_purple1"),
+    "[glob]":    ("⌕ glob",    "grey62"),
+    "[grep]":    ("⌕ grep",    "grey62"),
+    "[fetch]":   ("⬇ fetch",   "cyan"),
+    "[result]":  ("◉ result",  "grey42"),
+    "[error]":   ("✗ error",   "red1"),
+    "[done]":    ("✓ done",    "bright_green"),
+    "[handoff→]":("→ handoff", "yellow1"),
+    "[files]":   ("∷ files",   "cyan"),
+    "[step]":    ("· step",    "grey42"),
+    "[task]":    ("⊕ task",    "bright_blue"),
+    "[tools]":   ("⊞ tools",   "grey62"),
+    "[model]":   ("◈ model",   "grey42"),
+}
 
 
-_ANSI = re.compile(r"\x1B(?:[@-Z\\-_]|\\[[0-?]*[ -/]*[@-~])")
+class AgentOutputPanel(Widget):
+    """
+    btop-style output panel.
+    - No Rich Markup in stored lines — only applied at render time
+    - Tool lines get colored prefix labels (like btop's metric names)
+    - Text is right-clipped, never wraps messily
+    - Auto-scrolls, keeps last 500 lines
+    """
 
+    DEFAULT_CSS = """
+    AgentOutputPanel {
+        border: round $secondary;
+        border-title-color: $secondary;
+        border-title-style: bold;
+        background: $surface;
+        padding: 0 1;
+        height: 100%;
+    }
+    AgentOutputPanel:focus-within {
+        border: round $accent;
+    }
+    #output-content {
+        height: 100%;
+        overflow-y: auto;
+    }
+    """
 
-class AgentOutputPanel(Vertical):
-    _current: str | None = None
-    _stream_task: Optional[work.Worker] = None
-    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._lines: deque[str] = deque(maxlen=500)
+        self._current_agent: str | None = None
+        self.border_title = "OUTPUT"
+
     @property
     def current_agent(self) -> str | None:
-        return self._current
+        """Expose current agent for testing compatibility"""
+        return self._current_agent
 
     def compose(self) -> ComposeResult:
-        yield Label("◈  AGENT OUTPUT", classes="panel--title panel--title-purple")
-        yield RichLog(
-            id="output-log",
-            highlight=True,
-            markup=False,
-            wrap=True,
-            max_lines=2000,
-        )
+        yield Static(self._render_output(), id="output-content", markup=True)
 
     def set_agent(self, name: str) -> None:
-        if name == self._current:
-            return
-        self._current = name
+        self._current_agent = name
+        self.border_title = f"OUTPUT  [{name}]"
+        self._lines.clear()
+        self._refresh()
+
+    def push_line(self, line: str) -> None:
+        clean = ANSI_ESCAPE.sub("", line).rstrip()
+        if clean:
+            self._lines.append(clean)
+            self._refresh()
+
+    def _refresh(self) -> None:
         try:
-            log = self.query_one("#output-log", RichLog)
-            log.clear()
-            log.write(f"── {name} ──")
+            widget = self.query_one("#output-content", Static)
+            widget.update(self._render_output())
         except Exception:
-            # Widget not mounted yet, skip
             pass
 
-    def push_line(self, raw: str) -> None:
-        clean = _ANSI.sub("", raw)[:4096]
-        try:
-            self.query_one("#output-log", RichLog).write(clean)
-        except Exception:
-            # Widget not mounted yet, skip
-            pass
-
-    def start_stream(self, agent_name: str) -> None:
-        """Start streaming output for the selected agent."""
-        # Cancel any existing stream
-        if self._stream_task and not self._stream_task.done:
-            self._stream_task.cancel()
+    def _render_output(self) -> RenderableType:
+        text = Text()
+        if not self._lines:
+            text.append("select an agent to view output", style="#3a5060")
+            return text
         
-        # Start new stream in a worker
-        self._stream_task = self.run_worker(self._stream_agent_output(agent_name))
+        for raw in self._lines:
+            self._format_line(text, raw)
+        return text
 
-    @work(exclusive=True, thread=False)
-    async def _stream_agent_output(self, agent_name: str) -> None:
-        """Stream output from the selected agent."""
-        try:
-            # Get agent manager and registry from app (or use global instances for testing)
-            if hasattr(self, 'app') and self.app:
-                agent_manager = self.app.agent_manager
-                registry = self.app.runtime_registry
-            else:
-                # Fallback for testing
-                from ..orchestrator.agent_manager import agent_manager
-            
-            # Get session ID for this agent
-            session_id = await agent_manager.get_session_id_by_name(agent_name)
-            if not session_id:
-                self.push_line(f"Agent {agent_name} not found")
+    def _format_line(self, text: Text, line: str) -> None:
+        for prefix, (label, color) in TOOL_LABELS.items():
+            if line.startswith(prefix):
+                rest = line[len(prefix):].strip()
+                text.append(f"{label} {rest}", style=color)
+                text.append("\n")
                 return
-            
-            # Get the runtime instance
-            agent_info = None
-            async with agent_manager._lock:
-                agent_info = agent_manager._agents.get(session_id)
-            
-            if not agent_info:
-                self.push_line(f"Agent {agent_name} not found in manager")
-                return
-            
-            runtime_instance = agent_info.runtime_instance
-            status = agent_info.status
-            
-            # Check if agent is done (no live process)
-            if status.state in ["done", "error"]:
-                # Replay from SQLite message bus
-                self.push_line(f"Agent {agent_name} is {status.state} - replaying from message bus")
-                # TODO: Implement DB replay when messaging system is available
-                self.push_line(f"[Would replay last N lines from SQLite message bus for {agent_name}]")
-            else:
-                # Stream live output
-                self.push_line(f"Streaming live output for {agent_name}...")
-                try:
-                    async for line in runtime_instance.stream_output(session_id):
-                        self.push_line(line)
-                except asyncio.CancelledError:
-                    self.push_line(f"Stream cancelled for {agent_name}")
-                except Exception as e:
-                    self.push_line(f"Stream error for {agent_name}: {e}")
-        
-        except Exception as e:
-            self.push_line(f"Error starting stream for {agent_name}: {e}")
+
+        # Plain assistant text
+        text.append(f"{line}\n", style="#8ab4cc")

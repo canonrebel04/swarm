@@ -1,357 +1,599 @@
-Don't use any of those tools as your primary solution. For a **multi-agent swarm doing real coding work**, you need two completely different things that none of those tools fully address together. Here's the complete picture:
+In the meantime here's the full design spec so you know exactly what's coming:
 
-## The Two Distinct Problems
+Two-Part Implementation
+Part 1 — swarm setup CLI command (like hermes setup)
+Runs before the TUI, detects available runtimes, lets you pick providers and enter API keys:
 
-**Problem 1 — Codebase Structure Index** (what agents query to find code)
-**Problem 2 — Agent Working Memory** (what agents remember across turns and handoffs)
+text
+┌─────────────────────────────────────────────┐
+│  🤖 Swarm Setup — Model Configuration       │
+├─────────────────────────────────────────────┤
+│  Orchestrator model:                        │
+│  ▶ [anthropic/claude-opus-4-5         ]     │
+│    [openai/o3                         ]     │
+│    [google/gemini-2.5-pro             ]     │
+│    [mistral/mistral-large             ]     │
+│    [custom...                         ]     │
+├─────────────────────────────────────────────┤
+│  API Keys (leave blank to keep existing):   │
+│  ANTHROPIC_API_KEY: [***************  ]     │
+│  OPENAI_API_KEY:    [               ]       │
+│  GOOGLE_API_KEY:    [               ]       │
+│  Custom endpoint:   [               ]       │
+└─────────────────────────────────────────────┘
+Part 2 — In-TUI model selector panel + autofocus fix
+A ModelSelectorModal triggered by M keybind or a settings gear icon, plus on_mount autofocus on the overseer chat input — which is a one-liner in Textual:
 
-These require different storage backends, different query patterns, and different update strategies. Conflating them is why off-the-shelf solutions fall short.
+python
+# In SwarmApp.on_mount():
+self.query_one(OverseerChatPanel).query_one(Input).focus()
+Once you paste the file list and config, I'll write the complete implementation for both parts fitted to your exact class names and theme.
 
-***
 
-## For Codebase Index: Build Your Own on CocoIndex + Tree-sitter
-
-**Don't use mem0, A-mem, Memori, or MemOS for this** — they're designed for conversational memory, not code structure.  CocoIndex with Tree-sitter is the right foundation — incremental processing (only reindexes changed files), Rust core for performance, and it chunks code by AST syntax nodes rather than arbitrary line breaks.  The key advantage is that when a builder agent edits `src/auth.py`, only that file's chunks are re-embedded — not the whole repo. [opencode](https://opencode.ai/docs/cli/)
-
-Your custom layer on top should add **three indexes** that generic tools never build:
+Perfect. I have everything I need. Here's the complete implementation:
 
 ```python
-# src/memory/codebase_index.py
-from dataclasses import dataclass, field
+# src/cli/setup.py
+"""
+swarm setup — interactive model/provider configuration wizard.
+Run before TUI or via: swarm setup
+"""
+import os
+import sys
 from pathlib import Path
-import sqlite3
-import json
+import yaml
 
-@dataclass
-class SymbolRecord:
-    """One entry per function/class/method in the codebase."""
-    fqn: str           # fully qualified name: src.auth.UserService.login
-    kind: str          # function | class | method | variable | import
-    file: str          # relative path
-    line_start: int
-    line_end: int
-    signature: str     # def login(self, user: str, pw: str) -> bool
-    docstring: str
-    embedding: list[float] = field(default_factory=list)
+# All known provider/model combos across all 8 runtimes
+PROVIDER_CATALOG = [
+    # (display_label, runtime_key, model_string, env_var_needed)
+    ("Anthropic  · claude-opus-4-5      (best quality)",   "claude-code", "claude-opus-4-5",          "ANTHROPIC_API_KEY"),
+    ("Anthropic  · claude-sonnet-4-5    (fast + capable)", "claude-code", "claude-sonnet-4-5",         "ANTHROPIC_API_KEY"),
+    ("Anthropic  · claude-haiku-3-5     (cheapest)",       "claude-code", "claude-haiku-3-5",          "ANTHROPIC_API_KEY"),
+    ("OpenAI     · o3                   (best reasoning)", "codex",       "o3",                        "OPENAI_API_KEY"),
+    ("OpenAI     · o4-mini              (fast reasoning)", "codex",       "o4-mini",                   "OPENAI_API_KEY"),
+    ("Google     · gemini-2.5-pro       (deep analysis)",  "gemini",      "gemini-2.5-pro",            "GOOGLE_API_KEY"),
+    ("Google     · gemini-2.5-flash     (fast)",           "gemini",      "gemini-2.5-flash",          "GOOGLE_API_KEY"),
+    ("Mistral    · mistral-large-latest (default)",        "vibe",        "mistral-large-latest",      "MISTRAL_API_KEY"),
+    ("Mistral    · codestral-latest     (code-focused)",   "vibe",        "codestral-latest",          "MISTRAL_API_KEY"),
+    ("Nous       · hermes (local/any)",                    "hermes",      "hermes",                    None),
+    ("Custom     · enter manually...",                     "__custom__",  "",                          None),
+]
 
-@dataclass
-class DependencyEdge:
-    """Directed import/call edge between symbols."""
-    caller_fqn: str
-    callee_fqn: str
-    edge_type: str     # imports | calls | inherits | instantiates
-
-@dataclass
-class WorktreeSnapshot:
-    """Per-agent worktree state — what each agent has changed."""
-    agent_name: str
-    branch: str
-    modified_files: list[str]
-    added_symbols: list[str]
-    removed_symbols: list[str]
-    timestamp: float
+CONFIG_PATH = Path("config.yaml")
 
 
-class CodebaseIndex:
+def _read_config() -> dict:
+    if CONFIG_PATH.exists():
+        return yaml.safe_load(CONFIG_PATH.read_text()) or {}
+    return {}
+
+
+def _write_config(cfg: dict) -> None:
+    CONFIG_PATH.write_text(yaml.dump(cfg, default_flow_style=False, sort_keys=False))
+
+
+def _bold(s: str) -> str:
+    return f"\033[1m{s}\033[0m"
+
+
+def _cyan(s: str) -> str:
+    return f"\033[96m{s}\033[0m"
+
+
+def _green(s: str) -> str:
+    return f"\033[92m{s}\033[0m"
+
+
+def _dim(s: str) -> str:
+    return f"\033[2m{s}\033[0m"
+
+
+def _clear_line() -> None:
+    sys.stdout.write("\033[2K\r")
+    sys.stdout.flush()
+
+
+def run_setup() -> None:
+    """Full interactive setup wizard — called by `swarm setup`."""
+    os.system("clear")
+    print(_cyan("╔══════════════════════════════════════════════════════╗"))
+    print(_cyan("║") + _bold("        🤖  Swarm — Model & Provider Setup          ") + _cyan("║"))
+    print(_cyan("╚══════════════════════════════════════════════════════╝"))
+    print()
+
+    cfg = _read_config()
+
+    # ── Step 1: Overseer model selection ──────────────────────────────────────
+    print(_bold("Step 1/3 — Overseer model"))
+    print(_dim("  The overseer is the main LLM that decomposes tasks and"))
+    print(_dim("  coordinates agents. Pick the provider/model to use.\n"))
+
+    current_model   = cfg.get("overseer", {}).get("model", "mistral-large-latest")
+    current_runtime = cfg.get("overseer", {}).get("runtime", "vibe")
+    print(f"  Current: {_cyan(current_runtime)} / {_cyan(current_model)}\n")
+
+    for i, (label, _, _, _) in enumerate(PROVIDER_CATALOG):
+        prefix = _green("  ▶") if i == 0 else "   "
+        print(f"{prefix} [{i + 1:2}]  {label}")
+
+    print()
+    while True:
+        try:
+            raw = input(_bold("  Select [1-{n}]: ".format(n=len(PROVIDER_CATALOG)))).strip()
+            choice = int(raw) - 1
+            if 0 <= choice < len(PROVIDER_CATALOG):
+                break
+        except (ValueError, KeyboardInterrupt):
+            print("\n  Aborted.")
+            return
+
+    label, runtime_key, model_str, env_var = PROVIDER_CATALOG[choice]
+
+    if runtime_key == "__custom__":
+        print()
+        runtime_key = input(_bold("  Runtime key (e.g. vibe, codex, gemini): ")).strip()
+        model_str   = input(_bold("  Model string (e.g. provider/model-name):  ")).strip()
+        env_var     = input(_bold("  Env var for API key (leave blank if none): ")).strip() or None
+
+    # ── Step 2: API key ────────────────────────────────────────────────────────
+    if env_var:
+        print()
+        print(_bold(f"Step 2/3 — API key for {env_var}"))
+        existing = os.environ.get(env_var) or _read_env_file(env_var)
+        if existing:
+            masked = existing[:6] + "***" + existing[-3:]
+            print(f"  Current value: {_dim(masked)}")
+            raw_key = input(_bold("  New key (Enter to keep existing): ")).strip()
+        else:
+            print(_dim("  No existing key found in environment or .env file."))
+            raw_key = input(_bold("  Enter API key: ")).strip()
+
+        if raw_key:
+            _write_env_file(env_var, raw_key)
+            print(_green(f"  ✓ Saved to .env"))
+    else:
+        print()
+        print(_dim("Step 2/3 — API key: not required for this provider, skipping."))
+
+    # ── Step 3: Agent role → runtime mapping (optional) ───────────────────────
+    print()
+    print(_bold("Step 3/3 — Per-role runtime assignment  ") + _dim("(optional, press Enter to keep defaults)"))
+    print(_dim("  Assign which runtime handles each agent role."))
+    print(_dim("  Available runtimes: vibe, claude-code, codex, gemini, hermes, opencode, openclaw\n"))
+
+    roles = cfg.get("roles", {}).get("enabled", [
+        "scout", "builder", "developer", "tester", "reviewer", "merger", "monitor"
+    ])
+
+    role_runtime_map = cfg.get("role_runtimes", {})
+    DEFAULTS = {
+        "scout":     "codex",
+        "reviewer":  "codex",
+        "builder":   "hermes",
+        "tester":    "hermes",
+        "developer": "claude-code",
+        "merger":    "gemini",
+        "monitor":   "openclaw",
+        "coordinator": "vibe",
+        "orchestrator": "openclaw",
+    }
+
+    new_map = {}
+    for role in roles:
+        current = role_runtime_map.get(role, DEFAULTS.get(role, "vibe"))
+        raw = input(f"  {role:<14} [{_cyan(current)}]: ").strip()
+        new_map[role] = raw if raw else current
+
+    # ── Write config ───────────────────────────────────────────────────────────
+    if "overseer" not in cfg:
+        cfg["overseer"] = {}
+    cfg["overseer"]["runtime"] = runtime_key
+    cfg["overseer"]["model"]   = model_str
+    cfg["role_runtimes"]       = new_map
+
+    # Ensure runtime is present in runtimes block
+    if "runtimes" not in cfg:
+        cfg["runtimes"] = {}
+    if runtime_key not in cfg["runtimes"] and runtime_key != "__custom__":
+        cfg["runtimes"][runtime_key] = _default_runtime_block(runtime_key)
+
+    _write_config(cfg)
+    print()
+    print(_green("╔══════════════════════════════════════════════════════╗"))
+    print(_green("║  ✓  Configuration saved to config.yaml               ║"))
+    print(_green("╚══════════════════════════════════════════════════════╝"))
+    print()
+    print(f"  Overseer: {_cyan(runtime_key)} / {_cyan(model_str)}")
+    print(f"  Run {_bold('swarm')} to launch.\n")
+
+
+def _read_env_file(key: str) -> str | None:
+    env_file = Path(".env")
+    if not env_file.exists():
+        return None
+    for line in env_file.read_text().splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return None
+
+
+def _write_env_file(key: str, value: str) -> None:
+    env_file = Path(".env")
+    lines = env_file.read_text().splitlines() if env_file.exists() else []
+    updated = False
+    for i, line in enumerate(lines):
+        if line.startswith(f"{key}="):
+            lines[i] = f'{key}="{value}"'
+            updated = True
+            break
+    if not updated:
+        lines.append(f'{key}="{value}"')
+    env_file.write_text("\n".join(lines) + "\n")
+
+
+def _default_runtime_block(runtime_key: str) -> dict:
+    defaults = {
+        "vibe":        {"binary": "vibe",        "programmatic_flag": "-p",      "output_format": "streaming"},
+        "claude-code": {"binary": "claude",       "programmatic_flag": "--print", "output_format": "stream-json"},
+        "codex":       {"binary": "codex",        "programmatic_flag": "exec",    "output_format": "json"},
+        "gemini":      {"binary": "gemini",       "programmatic_flag": "-p",      "output_format": "stream-json"},
+        "hermes":      {"binary": "hermes",       "programmatic_flag": "chat -q", "output_format": "text"},
+        "opencode":    {"binary": "opencode",     "programmatic_flag": "run",     "output_format": "stream-json"},
+        "openclaw":    {"binary": "openclaw",     "programmatic_flag": "agent",   "output_format": "json"},
+    }
+    return defaults.get(runtime_key, {"binary": runtime_key, "output_format": "text"})
+```
+
+```python
+# src/tui/screens/model_selector.py
+"""
+In-TUI model selector modal — triggered by pressing 'M' from main screen.
+Shows provider list with arrow-key navigation, live search filter,
+and custom entry fields. Writes directly to config.yaml on confirm.
+"""
+from __future__ import annotations
+from pathlib import Path
+from textual.app import ComposeResult
+from textual.screen import ModalScreen
+from textual.widgets import (
+    Static, ListView, ListItem, Label,
+    Input, Button, Rule
+)
+from textual.containers import Vertical, Horizontal, Container
+from textual.binding import Binding
+from textual.reactive import reactive
+import yaml
+
+PROVIDER_OPTIONS = [
+    ("claude-code", "claude-opus-4-5",       "Anthropic",  "claude-opus-4-5        — best quality"),
+    ("claude-code", "claude-sonnet-4-5",     "Anthropic",  "claude-sonnet-4-5      — fast + capable"),
+    ("claude-code", "claude-haiku-3-5",      "Anthropic",  "claude-haiku-3-5       — cheapest"),
+    ("codex",       "o3",                    "OpenAI",     "o3                     — best reasoning"),
+    ("codex",       "o4-mini",               "OpenAI",     "o4-mini                — fast reasoning"),
+    ("gemini",      "gemini-2.5-pro",        "Google",     "gemini-2.5-pro         — deep analysis"),
+    ("gemini",      "gemini-2.5-flash",      "Google",     "gemini-2.5-flash       — fast"),
+    ("vibe",        "mistral-large-latest",  "Mistral",    "mistral-large-latest   — default"),
+    ("vibe",        "codestral-latest",      "Mistral",    "codestral-latest       — code-focused"),
+    ("hermes",      "hermes",                "Nous",       "hermes                 — local/any"),
+]
+
+CONFIG_PATH = Path("config.yaml")
+
+
+class ModelSelectorModal(ModalScreen):
+    """Full-screen modal for selecting overseer model and provider."""
+
+    BINDINGS = [
+        Binding("escape",     "dismiss(None)", "Cancel",  show=True),
+        Binding("ctrl+s",     "save",          "Save",    show=True),
+        Binding("enter",      "select_item",   "Select",  show=False),
+    ]
+
+    CSS = """
+    ModelSelectorModal {
+        align: center middle;
+    }
+
+    #modal-container {
+        width: 72;
+        height: auto;
+        max-height: 85vh;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #modal-title {
+        text-align: center;
+        text-style: bold;
+        color: $accent;
+        padding-bottom: 1;
+    }
+
+    #search-input {
+        margin-bottom: 1;
+    }
+
+    #provider-list {
+        height: 14;
+        border: solid $primary-darken-2;
+    }
+
+    #provider-list > ListItem {
+        padding: 0 1;
+    }
+
+    #provider-list > ListItem.--highlight {
+        background: $accent 20%;
+        color: $text;
+    }
+
+    #divider {
+        margin: 1 0;
+    }
+
+    #custom-section Label {
+        color: $text-muted;
+        margin-bottom: 0;
+    }
+
+    #custom-runtime, #custom-model {
+        margin-bottom: 1;
+    }
+
+    #current-label {
+        color: $text-muted;
+        text-align: center;
+        padding: 1 0 0 0;
+    }
+
+    #button-row {
+        align: right middle;
+        height: 3;
+        margin-top: 1;
+    }
+
+    #btn-cancel {
+        margin-right: 1;
+    }
+
+    #btn-save {
+        background: $accent;
+    }
     """
-    Three-layer codebase index built for multi-agent swarm use.
 
-    Layer 1 — Symbol table (SQLite):
-        Fast exact lookup by FQN, file, or kind.
-        "What is the signature of UserService.login?"
-        "What files does this module export?"
+    def __init__(self) -> None:
+        super().__init__()
+        self._cfg = self._load_config()
+        self._filtered = list(PROVIDER_OPTIONS)
+        self._custom_mode = False
 
-    Layer 2 — Semantic vector index (Postgres + pgvector via CocoIndex):
-        Semantic similarity search across code chunks.
-        "Find code similar to this auth pattern"
-        "What functions handle JWT token validation?"
+    def _load_config(self) -> dict:
+        if CONFIG_PATH.exists():
+            return yaml.safe_load(CONFIG_PATH.read_text()) or {}
+        return {}
 
-    Layer 3 — Dependency graph (SQLite adjacency list):
-        Multi-hop structural queries.
-        "What calls UserService.login?"
-        "What would break if I change this interface?"
-        "Show the import chain from main to this function"
+    def compose(self) -> ComposeResult:
+        current_rt    = self._cfg.get("overseer", {}).get("runtime", "vibe")
+        current_model = self._cfg.get("overseer", {}).get("model", "mistral-large-latest")
 
-    All three update incrementally on file change — no full re-index.
-    WorktreeSnapshot tracks per-agent divergence from main.
-    """
-
-    def __init__(self, db_path: str = ".polyglot/index.db"):
-        self.db_path = db_path
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
-
-    def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.executescript("""
-                CREATE TABLE IF NOT EXISTS symbols (
-                    fqn         TEXT PRIMARY KEY,
-                    kind        TEXT NOT NULL,
-                    file        TEXT NOT NULL,
-                    line_start  INTEGER,
-                    line_end    INTEGER,
-                    signature   TEXT,
-                    docstring   TEXT,
-                    updated_at  REAL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file);
-                CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
-
-                CREATE TABLE IF NOT EXISTS dependencies (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    caller_fqn  TEXT NOT NULL,
-                    callee_fqn  TEXT NOT NULL,
-                    edge_type   TEXT NOT NULL,
-                    UNIQUE(caller_fqn, callee_fqn, edge_type)
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_dep_caller ON dependencies(caller_fqn);
-                CREATE INDEX IF NOT EXISTS idx_dep_callee ON dependencies(callee_fqn);
-
-                CREATE TABLE IF NOT EXISTS worktree_snapshots (
-                    agent_name      TEXT NOT NULL,
-                    branch          TEXT NOT NULL,
-                    modified_files  TEXT,   -- JSON array
-                    added_symbols   TEXT,   -- JSON array
-                    removed_symbols TEXT,   -- JSON array
-                    timestamp       REAL,
-                    PRIMARY KEY (agent_name, branch)
-                );
-
-                CREATE TABLE IF NOT EXISTS agent_memory (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id  TEXT NOT NULL,
-                    agent_name  TEXT NOT NULL,
-                    role        TEXT NOT NULL,
-                    key         TEXT NOT NULL,
-                    value       TEXT NOT NULL,   -- JSON
-                    expires_at  REAL,            -- NULL = permanent
-                    created_at  REAL,
-                    UNIQUE(session_id, agent_name, key)
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_mem_agent ON agent_memory(agent_name);
-                CREATE INDEX IF NOT EXISTS idx_mem_session ON agent_memory(session_id);
-            """)
-
-    # ── Symbol table ───────────────────────────────────────────────────────────
-
-    def upsert_symbol(self, rec: SymbolRecord) -> None:
-        import time
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT INTO symbols
-                    (fqn, kind, file, line_start, line_end, signature, docstring, updated_at)
-                VALUES (?,?,?,?,?,?,?,?)
-                ON CONFLICT(fqn) DO UPDATE SET
-                    kind=excluded.kind, file=excluded.file,
-                    line_start=excluded.line_start, line_end=excluded.line_end,
-                    signature=excluded.signature, docstring=excluded.docstring,
-                    updated_at=excluded.updated_at
-            """, (rec.fqn, rec.kind, rec.file, rec.line_start, rec.line_end,
-                  rec.signature, rec.docstring, time.time()))
-
-    def get_symbol(self, fqn: str) -> SymbolRecord | None:
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT fqn,kind,file,line_start,line_end,signature,docstring "
-                "FROM symbols WHERE fqn=?", (fqn,)
-            ).fetchone()
-        if not row:
-            return None
-        return SymbolRecord(*row)
-
-    def symbols_in_file(self, file: str) -> list[SymbolRecord]:
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT fqn,kind,file,line_start,line_end,signature,docstring "
-                "FROM symbols WHERE file=? ORDER BY line_start", (file,)
-            ).fetchall()
-        return [SymbolRecord(*r) for r in rows]
-
-    def remove_file_symbols(self, file: str) -> None:
-        """Call when a file is deleted or fully rewritten."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("DELETE FROM symbols WHERE file=?", (file,))
-
-    # ── Dependency graph ───────────────────────────────────────────────────────
-
-    def add_edge(self, caller: str, callee: str, edge_type: str) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT OR IGNORE INTO dependencies (caller_fqn, callee_fqn, edge_type)
-                VALUES (?,?,?)
-            """, (caller, callee, edge_type))
-
-    def callers_of(self, fqn: str, edge_type: str | None = None) -> list[str]:
-        """Who calls/imports/inherits this symbol?"""
-        with sqlite3.connect(self.db_path) as conn:
-            if edge_type:
-                rows = conn.execute(
-                    "SELECT caller_fqn FROM dependencies "
-                    "WHERE callee_fqn=? AND edge_type=?", (fqn, edge_type)
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT caller_fqn FROM dependencies WHERE callee_fqn=?", (fqn,)
-                ).fetchall()
-        return [r[0] for r in rows]
-
-    def callees_of(self, fqn: str) -> list[str]:
-        """What does this symbol call/import/inherit?"""
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT callee_fqn, edge_type FROM dependencies WHERE caller_fqn=?", (fqn,)
-            ).fetchall()
-        return [(r[0], r [opencode](https://opencode.ai/docs/cli/)) for r in rows]
-
-    def impact_radius(self, fqn: str, depth: int = 3) -> set[str]:
-        """
-        BFS: find all symbols that transitively depend on this one.
-        Used by reviewer/supervisor to assess change blast radius.
-        """
-        visited = set()
-        frontier = {fqn}
-        for _ in range(depth):
-            next_frontier = set()
-            for node in frontier:
-                for caller in self.callers_of(node):
-                    if caller not in visited:
-                        next_frontier.add(caller)
-                        visited.add(caller)
-            frontier = next_frontier
-        return visited
-
-    # ── Worktree snapshots ─────────────────────────────────────────────────────
-
-    def update_worktree_snapshot(self, snap: WorktreeSnapshot) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT INTO worktree_snapshots
-                    (agent_name, branch, modified_files, added_symbols,
-                     removed_symbols, timestamp)
-                VALUES (?,?,?,?,?,?)
-                ON CONFLICT(agent_name, branch) DO UPDATE SET
-                    modified_files=excluded.modified_files,
-                    added_symbols=excluded.added_symbols,
-                    removed_symbols=excluded.removed_symbols,
-                    timestamp=excluded.timestamp
-            """, (snap.agent_name, snap.branch,
-                  json.dumps(snap.modified_files),
-                  json.dumps(snap.added_symbols),
-                  json.dumps(snap.removed_symbols),
-                  snap.timestamp))
-
-    def active_worktrees(self) -> list[WorktreeSnapshot]:
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT agent_name,branch,modified_files,added_symbols,"
-                "removed_symbols,timestamp FROM worktree_snapshots"
-            ).fetchall()
-        return [
-            WorktreeSnapshot(
-                agent_name=r[0], branch=r [opencode](https://opencode.ai/docs/cli/),
-                modified_files=json.loads(r[2] or "[]"),
-                added_symbols=json.loads(r[3] or "[]"),
-                removed_symbols=json.loads(r[4] or "[]"),
-                timestamp=r[5],
+        with Vertical(id="modal-container"):
+            yield Static("⚙  Overseer Model Selector", id="modal-title")
+            yield Static(
+                f"Current: [{current_rt}] {current_model}",
+                id="current-label"
             )
-            for r in rows
-        ]
+            yield Rule(id="divider")
 
-    def conflict_check(self, agent_a: str, agent_b: str) -> list[str]:
-        """Return files modified by both agents — potential merge conflicts."""
-        snaps = {s.agent_name: s for s in self.active_worktrees()}
-        a = set(snaps.get(agent_a, WorktreeSnapshot(agent_a,"",[], [], [], 0)).modified_files)
-        b = set(snaps.get(agent_b, WorktreeSnapshot(agent_b,"",[], [], [], 0)).modified_files)
-        return list(a & b)
+            # Search/filter box
+            yield Input(
+                placeholder="Filter providers... (type to search)",
+                id="search-input",
+            )
 
-    # ── Agent working memory ───────────────────────────────────────────────────
+            # Provider list
+            lv = ListView(id="provider-list")
+            yield lv
 
-    def mem_set(self, session_id: str, agent_name: str, role: str,
-                key: str, value: any, ttl_seconds: float | None = None) -> None:
-        """Store a key-value memory entry for an agent."""
-        import time
-        expires_at = (time.time() + ttl_seconds) if ttl_seconds else None
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT INTO agent_memory
-                    (session_id, agent_name, role, key, value, expires_at, created_at)
-                VALUES (?,?,?,?,?,?,?)
-                ON CONFLICT(session_id, agent_name, key) DO UPDATE SET
-                    value=excluded.value, expires_at=excluded.expires_at,
-                    created_at=excluded.created_at
-            """, (session_id, agent_name, role, key,
-                  json.dumps(value), expires_at, time.time()))
+            yield Rule()
 
-    def mem_get(self, session_id: str, agent_name: str, key: str) -> any:
-        import time
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute("""
-                SELECT value, expires_at FROM agent_memory
-                WHERE session_id=? AND agent_name=? AND key=?
-            """, (session_id, agent_name, key)).fetchone()
-        if not row:
-            return None
-        value, expires_at = row
-        if expires_at and time.time() > expires_at:
-            return None   # expired
-        return json.loads(value)
+            # Custom entry (shown when "custom" selected or typed)
+            with Vertical(id="custom-section"):
+                yield Label("Custom runtime key:")
+                yield Input(placeholder="e.g.  vibe  /  codex  /  gemini", id="custom-runtime")
+                yield Label("Custom model string:")
+                yield Input(placeholder="e.g.  provider/model-name",        id="custom-model")
 
-    def mem_get_all(self, session_id: str, agent_name: str) -> dict:
-        """Get all non-expired memory for an agent in a session."""
-        import time
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute("""
-                SELECT key, value, expires_at FROM agent_memory
-                WHERE session_id=? AND agent_name=?
-            """, (session_id, agent_name)).fetchall()
-        now = time.time()
-        return {
-            r[0]: json.loads(r [opencode](https://opencode.ai/docs/cli/))
-            for r in rows
-            if not r[2] or now <= r[2]
-        }
+            with Horizontal(id="button-row"):
+                yield Button("Cancel",     id="btn-cancel",  variant="default")
+                yield Button("Save  ⌃S",  id="btn-save",    variant="primary")
 
-    def mem_handoff(self, session_id: str,
-                    from_agent: str, to_agent: str, to_role: str) -> None:
-        """
-        Copy handoff-scoped memory from one agent to the next.
-        Only copies keys prefixed with 'handoff:' — ephemeral keys stay behind.
-        """
-        import time
-        all_mem = self.mem_get_all(session_id, from_agent)
-        for key, value in all_mem.items():
-            if key.startswith("handoff:"):
-                self.mem_set(session_id, to_agent, to_role, key, value)
+    def on_mount(self) -> None:
+        self._populate_list()
+        # Pre-select the currently configured option
+        self.query_one("#search-input", Input).focus()
+
+    def _populate_list(self, filter_text: str = "") -> None:
+        lv = self.query_one("#provider-list", ListView)
+        lv.clear()
+
+        q = filter_text.lower()
+        self._filtered = [
+            opt for opt in PROVIDER_OPTIONS
+            if q in opt[1].lower() or q in opt[2].lower() or q in opt[3].lower()
+        ] + ([("__custom__", "", "", "✏  Custom — enter below...")] if not q or "custom" in q else [])
+
+        for runtime, model, provider, label in self._filtered:
+            item = ListItem(Label(f"  {provider:<12} {label}"))
+            item.data = (runtime, model)   # stash for retrieval
+            lv.append(item)
+
+        if self._filtered:
+            lv.index = 0
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "search-input":
+            self._populate_list(event.value)
+            # Show custom section only when custom row would be selected
+            self._update_custom_visibility()
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        item = event.item
+        runtime, model = item.data if hasattr(item, "data") else ("__custom__", "")
+        self._custom_mode = (runtime == "__custom__")
+        self._update_custom_visibility()
+        if not self._custom_mode:
+            # Pre-fill custom fields with selection for easy editing
+            self.query_one("#custom-runtime", Input).value = runtime
+            self.query_one("#custom-model",   Input).value = model
+
+    def _update_custom_visibility(self) -> None:
+        section = self.query_one("#custom-section")
+        # Always show — fields double as a preview/override for any selection
+        section.display = True
+
+    def action_select_item(self) -> None:
+        lv = self.query_one("#provider-list", ListView)
+        if lv.highlighted_child:
+            self.on_list_view_selected(
+                ListView.Selected(lv, lv.highlighted_child)
+            )
+
+    def action_save(self) -> None:
+        self._do_save()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-save":
+            self._do_save()
+        elif event.button.id == "btn-cancel":
+            self.dismiss(None)
+
+    def _do_save(self) -> None:
+        # Custom fields take priority if filled in
+        custom_rt    = self.query_one("#custom-runtime", Input).value.strip()
+        custom_model = self.query_one("#custom-model",   Input).value.strip()
+
+        if custom_rt and custom_model:
+            runtime = custom_rt
+            model   = custom_model
+        else:
+            # Fall back to list selection
+            lv   = self.query_one("#provider-list", ListView)
+            item = lv.highlighted_child
+            if item and hasattr(item, "data"):
+                runtime, model = item.data
+            else:
+                self.app.notify("Select a model or fill in custom fields.", severity="warning")
+                return
+
+        if runtime == "__custom__" or not runtime or not model:
+            self.app.notify("Fill in both runtime and model fields.", severity="warning")
+            return
+
+        # Persist to config.yaml
+        cfg = self._load_config()
+        if "overseer" not in cfg:
+            cfg["overseer"] = {}
+        cfg["overseer"]["runtime"] = runtime
+        cfg["overseer"]["model"]   = model
+        CONFIG_PATH.write_text(yaml.dump(cfg, default_flow_style=False, sort_keys=False))
+
+        self.dismiss({"runtime": runtime, "model": model})
+```
+
+```python
+# src/tui/app.py  — additions only, merge into existing file
+
+# In SwarmApp class:
+
+BINDINGS = [
+    # ... your existing bindings ...
+    Binding("m", "push_screen('model_selector')", "Model",  show=True),
+]
+
+def on_mount(self) -> None:
+    # ── Autofocus overseer chat input immediately on launch ────────────────
+    # Textual processes focus after compose() completes — call_after_refresh
+    # ensures the widget tree is fully built before we try to focus.
+    self.call_after_refresh(self._focus_chat_input)
+
+    # ... rest of your existing on_mount logic ...
+
+def _focus_chat_input(self) -> None:
+    """Focus the overseer chat input so the user can type immediately."""
+    try:
+        from src.tui.panels.overseer_chat import OverseerChatPanel
+        panel = self.query_one(OverseerChatPanel)
+        # Try common input widget IDs — adjust to match your actual widget id
+        for selector in ("#chat-input", "#overseer-input", "Input"):
+            try:
+                panel.query_one(selector).focus()
+                return
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+def action_push_screen_model_selector(self) -> None:
+    from src.tui.screens.model_selector import ModelSelectorModal
+
+    def handle_result(result: dict | None) -> None:
+        if result:
+            runtime = result["runtime"]
+            model   = result["model"]
+            self.notify(f"Overseer: {runtime} / {model}", title="Model updated")
+            # Live-reload the coordinator with new config if running
+            if hasattr(self, "coordinator"):
+                self.coordinator.reload_model(runtime, model)
+
+    self.push_screen(ModelSelectorModal(), handle_result)
+
+# Override the 'm' binding handler name to match:
+def action_model(self) -> None:
+    self.action_push_screen_model_selector()
+```
+
+```python
+# src/tui/panels/overseer_chat.py — one addition only
+
+class OverseerChatPanel(Widget):   # or whatever your base class is
+
+    def on_mount(self) -> None:
+        # Ensure the input inside this panel is named so app.py can find it
+        # If your Input already has an id, just make sure it matches
+        # the selector in SwarmApp._focus_chat_input()
+        try:
+            self.query_one(Input).id = "chat-input"
+        except Exception:
+            pass
+```
+
+```python
+# Entry point addition — src/cli/main.py or wherever `swarm` console script points
+
+import sys
+
+def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "setup":
+        from src.cli.setup import run_setup
+        run_setup()
+        return
+
+    # Normal TUI launch
+    from src.tui.app import SwarmApp
+    SwarmApp().run()
 ```
 
 ***
 
-## Why Not the Tools You Listed
-
-| Tool | Problem |
-|---|---|
-| **mem0 / A-mem / Memori** | Conversational memory only — no code structure awareness, no symbol tables |
-| **MemOS / MemMachine** | Research prototypes, not production-grade, no Tree-sitter integration |
-| **CodexGraph** | Graph DB approach is correct but requires Neo4j + heavy setup — SQLite adjacency list gives you 90% of the value |
-| **code-index-mcp / codeindex** | Read-only search tools — no agent working memory, no worktree tracking |
-| **CocoIndex** | ✅ Use this for the semantic vector layer only — it doesn't do symbol tables or agent memory |
-| **LangChain conversational memory** | Completely wrong category — chat history buffers, not codebase indexes |
-
-## The Right Stack
+## How It All Fits Together
 
 ```
-┌─────────────────────────────────────────────┐
-│           CodebaseIndex (yours)             │
-├──────────────┬──────────────┬───────────────┤
-│ Symbol Table │  Dep Graph   │ Agent Memory  │
-│   SQLite     │   SQLite     │   SQLite      │
-├──────────────┴──────────────┴───────────────┤
-│     CocoIndex + Tree-sitter + pgvector      │
-│        (semantic chunk search only)         │
-└─────────────────────────────────────────────┘
+swarm setup          → terminal wizard (no TUI needed, works headless/SSH)
+swarm                → launches TUI, chat input focused immediately
+M key in TUI         → opens ModelSelectorModal over current screen
+Escape / Cancel      → dismiss with no changes
+Ctrl+S / Save        → writes runtime+model to config.yaml, notifies coordinator
 ```
 
-Build your own `CodebaseIndex` as above — it's ~400 lines and gives you symbol lookup, impact radius, conflict detection, and agent handoff memory in one local SQLite file with zero external dependencies except CocoIndex for the semantic layer.
+The search filter in the modal is the key UX win — typing `openai` instantly narrows to just o3/o4-mini, typing `claude` shows only Anthropic options. Custom fields always visible at the bottom so power users can paste any `provider/model` string without needing a list entry for it.

@@ -1,49 +1,77 @@
-"""
-Event Log Panel
-"""
-
+from __future__ import annotations
+from collections import deque
 from datetime import datetime
 from textual.app import ComposeResult
-from textual.widgets import RichLog, Label
-from textual.containers import Vertical
-
+from textual.widget import Widget
+from textual.widgets import Static
+from textual.visual import Visual
+from rich.text import Text
+from rich.console import RenderableType
 
 LEVEL_STYLE = {
-    "info":  "[dim #5a6a80]",
-    "warn":  "[#f9e718]",
-    "error": "[bold #ff2d6b]",
-    "spawn": "[#39ff14]",
-    "kill":  "[#ff1c1c]",
-    "done":  "[dim #3a4255]",
-    "drift": "[bold #ff6b1a]",
-}
-
-LEVEL_ICON = {
-    "info":  "·",
-    "warn":  "⚠",
-    "error": "✗",
-    "spawn": "▶",
-    "kill":  "■",
-    "done":  "✓",
-    "drift": "⚡",
+    "info":  ("·", "#3a7080"),
+    "spawn": ("▶", "bright_green"),
+    "done":  ("✓", "cyan"),
+    "warn":  ("⚠", "dark_orange"),
+    "error": ("✗", "red1"),
+    "kill":  ("✗", "red1"),
+    "merge": ("⇌", "medium_purple1"),
+    "handoff":("→","yellow1"),
 }
 
 
-class EventLogPanel(Vertical):
+class EventLogPanel(Widget):
+    """
+    btop-style event log — tight rows, timestamp + icon + source + message.
+    No border title widget — embedded in border.
+    """
+
+    DEFAULT_CSS = """
+    EventLogPanel {
+        border: round $accent;
+        border-title-color: $accent;
+        border-title-style: bold;
+        background: $surface;
+        padding: 0 1;
+        height: 100%;
+    }
+    #event-content {
+        height: 100%;
+        overflow-y: auto;
+    }
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._events: deque[tuple[str, str, str, str]] = deque(maxlen=200)
+        self.border_title = "EVENTS"
 
     def compose(self) -> ComposeResult:
-        yield Label("⚡  EVENTS", classes="panel--title panel--title-orange")
-        yield RichLog(
-            id="event-log-widget",
-            highlight=False,
-            markup=True,
-            wrap=True,
-            max_lines=500,
-        )
+        yield Static("[#3a5060]no events yet[/#3a5060]", id="event-content", markup=True)
 
     def push_event(self, level: str, source: str, message: str) -> None:
-        log  = self.query_one("#event-log-widget", RichLog)
-        ts   = datetime.now().strftime("%H:%M:%S")
-        s    = LEVEL_STYLE.get(level, "[dim]")
-        icon = LEVEL_ICON.get(level, "·")
-        log.write(f"[dim]{ts}[/] {s}{icon} [{source}] {message}[/]")
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._events.append((ts, level, source, message))
+        self._refresh()
+
+    def _refresh(self) -> None:
+        try:
+            self.query_one("#event-content", Static).update(self._render_content())
+        except Exception:
+            pass
+
+    def _render_content(self) -> str:
+        """Return a string with Rich markup that Static widget can handle"""
+        if not self._events:
+            return "[#3a5060]no events yet[/#3a5060]"
+        
+        lines = []
+        for ts, level, source, msg in self._events:
+            icon, color = LEVEL_STYLE.get(level, ("·", "#3a5060"))
+            line = f"{ts} {icon} {source:<14.14} {msg}"
+            lines.append(f"[{color}]{line}[/{color}]")
+        return "\n".join(lines)
+    
+    def _render(self) -> Visual:
+        """Override _render to delegate to the Static widget"""
+        return self.query_one("#event-content", Static).render()

@@ -491,6 +491,28 @@ NOTE: Prefer mistral-vibe runtime for orchestration tasks as it's optimized for 
         except ValueError:
             return None
 
+    def handle_overseer_input(self, text: str) -> None:
+        """Handle overseer input from the TUI."""
+        # Create a background task to process the input
+        asyncio.create_task(self._process_overseer_input(text))
+
+    async def _process_overseer_input(self, text: str) -> None:
+        """Process overseer input asynchronously."""
+        try:
+            # Add to task queue for decomposition
+            await self._task_queue.put(text)
+            
+            # Push event
+            if self._push_event_callback:
+                self._push_event_callback("info", "coordinator", f"queued: {text}")
+            
+            # Start processing if not already running
+            if not hasattr(self, '_processing_task') or self._processing_task.done():
+                self._processing_task = asyncio.create_task(self._process_task_queue())
+        except Exception as e:
+            if self._push_event_callback:
+                self._push_event_callback("error", "coordinator", f"Failed to process input: {e}")
+
 
 # Global coordinator instance
 coordinator = Coordinator()

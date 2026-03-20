@@ -1,106 +1,153 @@
-"""
-Overseer Chat Panel
-"""
-
-import asyncio
-from datetime import datetime
+from __future__ import annotations
+from collections import deque
 from textual.app import ComposeResult
-from textual.widgets import RichLog, Input, Label
-from textual.containers import Vertical
-from textual.reactive import reactive
-from textual import work
+from textual.widget import Widget
+from textual.widgets import Static, Input, Markdown, LoadingIndicator
+from textual.containers import Vertical, Horizontal, ScrollableContainer
+from textual.binding import Binding
+from rich.text import Text
+from rich.console import RenderableType
 
 
-SENDER_STYLE = {
-    "user":     "[bold #f9e718]",
-    "overseer": "[bold #00e5ff]",
-    "system":   "[dim #3a4255]",
-}
+class OverseerChatPanel(Widget):
+    """
+    btop-style overseer console.
+    Conversation history above, single-line input at the bottom.
+    Input is a real Textual Input widget — always focusable.
+    No padding wasted on labels/headers inside the widget.
+    """
 
-ICONS = {
-    "user":     "▸",
-    "overseer": "◈",
-    "system":   "·",
-}
+    DEFAULT_CSS = """
+    OverseerChatPanel {
+        border: round $primary;
+        border-title-color: $primary;
+        border-title-style: bold;
+        background: $surface;
+        padding: 0;
+        height: 100%;
+    }
+    OverseerChatPanel:focus-within {
+        border: round $accent;
+    }
+    #chat-scroll {
+        height: 1fr;
+        padding: 0 1;
+        overflow-y: auto;
+    }
+    .msg-user {
+        color: #7ec8e3;
+        margin: 0 1;
+    }
+    .msg-agent {
+        margin: 0 1;
+    }
+    .msg-loading {
+        color: #fea62b;
+    }
+    #chat-divider {
+        height: 1;
+        color: $primary;
+        padding: 0 1;
+    }
+    #chat-input {
+        height: 1;
+        border: none;
+        background: $panel;
+        padding: 0 1;
+        color: white;
+        margin: 0;
+    }
+    #chat-input:focus {
+        border: none;
+        background: $panel;
+    }
+    #input-row {
+        height: 3;
+        background: $panel;
+        border-top: solid $primary;
+        padding: 0;
+    }
+    #prompt-label {
+        width: 4;
+        color: #00d4aa;
+        text-style: bold;
+        padding: 1 0 0 1;
+    }
+    """
 
+    BINDINGS = [
+        Binding("enter", "submit", "Send", show=False),
+        Binding("ctrl+l", "clear", "Clear", show=False),
+    ]
 
-class OverseerChatPanel(Vertical):
-    thinking: reactive[bool] = reactive(False)
-    messages: list = []
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._messages: deque[tuple[str, str]] = deque(maxlen=200)
+        self.border_title = "OVERSEER CONSOLE"
+
+    @property
+    def messages(self) -> list[dict[str, str]]:
+        """Expose messages for testing compatibility"""
+        return [{"sender": sender, "content": content} for sender, content in self._messages]
 
     def compose(self) -> ComposeResult:
-        yield Label("◈  OVERSEER CONSOLE", classes="panel--title panel--title-cyan")
-        yield RichLog(
-            id="chat-log",
-            highlight=False,
-            markup=True,
-            wrap=True,
-            max_lines=1000,
-        )
-        yield Input(
-            placeholder="  ▸ message overseer…",
-            id="nudge-input",
-        )
+        from textual.containers import Horizontal
+        yield ScrollableContainer(id="chat-scroll")
+        with Horizontal(id="input-row"):
+            yield Static("▶ ", id="prompt-label")
+            yield Input(
+                placeholder="message overseer...",
+                id="chat-input",
+            )
 
-    def watch_thinking(self, value: bool) -> None:
-        log = self.query_one("#chat-log", RichLog)
-        if value:
-            log.write("[dim #004d5e]  ◌ overseer processing…[/]")
+    def on_mount(self) -> None:
+        self.query_one("#chat-input", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        text = event.value.strip()
-        if not text:
-            return
-        event.input.clear()
-        self.add_message("user", text)
-        
-        # Push user input event
-        if hasattr(self, 'app') and hasattr(self.app, 'push_swarm_event'):
-            message_preview = text[:60] + "…" if len(text) > 60 else text
-            self.app.push_swarm_event("info", "user", message_preview)
-        
-        # Stream the response
-        self.stream_response(text)
+        if event.input.id == "chat-input":
+            text = event.value.strip()
+            if text:
+                self.add_message("user", text)
+                event.input.value = ""
+                # Bubble up to app
+                self.app.handle_overseer_input(text)  # type: ignore[attr-defined]
 
-    def add_message(self, sender: str, text: str) -> None:
-        """Add a message to the chat"""
-        self.messages.append({"sender": sender, "content": text})
-        self._write_message(sender, text)
+    def add_user_message(self, text: str) -> None:
+        scroll = self.query_one("#chat-scroll")
+        scroll.mount(Static(f"**you** {text}", classes="msg-user"))
+        scroll.scroll_end(animate=False)
 
-    def _write_message(self, sender: str, text: str) -> None:
-        try:
-            log = self.query_one("#chat-log", RichLog)
-            ts    = datetime.now().strftime("%H:%M:%S")
-            style = SENDER_STYLE.get(sender, "[dim]")
-            icon  = ICONS.get(sender, "·")
-            log.write(f"[dim]{ts}[/] {style}{icon}[/] {text}")
-        except Exception:
-            # Widget not mounted yet, skip
-            pass
+    def add_agent_message(self, agent_name: str, text: str) -> None:
+        scroll = self.query_one("#chat-scroll")
+        # Remove loading indicator for this agent if present
+        for w in scroll.query(f".loading-{agent_name}"):
+            w.remove()
+        # Render full markdown response
+        md = Markdown(f"**{agent_name}** \n\n{text}", classes="msg-agent")
+        scroll.mount(md)
+        scroll.scroll_end(animate=False)
 
-    @work(exclusive=True, thread=False)
-    async def stream_response(self, text: str) -> None:
-        """Stream the coordinator's response to user input."""
-        self.thinking = True
-        try:
-            # Get coordinator from app
-            if hasattr(self, 'app') and hasattr(self.app, 'coordinator'):
-                coordinator = self.app.coordinator
-                
-                # Stream the response token by token
-                async for token in coordinator.handle_user_input(text):
-                    self.push_token(token)
-                
-                # Add newline after streaming
-                self.push_token("\n")
-            else:
-                self.add_message("overseer", "[dim]no coordinator connected yet[/]")
-        finally:
-            self.thinking = False
+    def show_agent_loading(self, agent_name: str) -> None:
+        scroll = self.query_one("#chat-scroll")
+        indicator = LoadingIndicator(classes=f"msg-loading loading-{agent_name}")
+        scroll.mount(indicator)
+        scroll.scroll_end(animate=False)
 
-    def push_token(self, token: str) -> None:
-        log = self.query_one("#chat-log", RichLog)
-        log.write(token, shrink=False, scroll_end=True)
+    def add_message(self, sender: str, content: str) -> None:
+        """Backward compatibility method"""
+        if sender == "user":
+            self.add_user_message(content)
+        else:
+            self.add_agent_message(sender, content)
 
-    def push_system(self, msg: str) -> None:
-        self.add_message("system", msg)
+    def action_submit(self) -> None:
+        inp = self.query_one("#chat-input", Input)
+        text = inp.value.strip()
+        if text:
+            self.add_message("user", text)
+            inp.value = ""
+            self.app.handle_overseer_input(text)  # type: ignore[attr-defined]
+
+    def action_clear(self) -> None:
+        self._messages.clear()
+        self._refresh_history()
