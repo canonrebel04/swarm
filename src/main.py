@@ -1,5 +1,5 @@
 """
-Main entry point for PolyglotSwarm.
+Main entry point for Swarm.
 """
 
 from .cli.app import app

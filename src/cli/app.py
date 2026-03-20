@@ -140,11 +140,21 @@ def runtimes():
 @app.command()
 def tui():
     """Launch the PolyglotSwarm Textual user interface."""
-    from ..tui.app import PolyglotSwarmApp
+    from ..tui.app import SwarmApp
     
-    typer.echo("Launching PolyglotSwarm TUI...")
-    app = PolyglotSwarmApp()
+    typer.echo("Launching Swarm TUI...")
+    app = SwarmApp()
     app.run()
+
+
+@app.command()
+def configure_runtimes():
+    """Configure runtime providers and models interactively."""
+    from .runtime_config import configure_runtimes as runtime_config_func
+    
+    typer.echo("Starting runtime configuration...")
+    runtime_config_func()
+    typer.echo("Runtime configuration completed!")
 
 
 if __name__ == "__main__":

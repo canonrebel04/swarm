@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Console script entry point for PolyglotSwarm.
+# Console script entry point for Swarm.
 
 # Activate virtual environment and run Python module
 cd "$(dirname "$0")"

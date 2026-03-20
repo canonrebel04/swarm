@@ -1,4 +1,4 @@
-# PolyglotSwarm Configuration
+# Swarm Configuration
 
 overseer:
   runtime: "mistral-vibe"  # Default runtime for overseer

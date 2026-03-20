@@ -3,6 +3,6 @@ TUI Module
 Entry point for the Textual-based user interface
 """
 
-from .app import PolyglotSwarmApp
+from .app import SwarmApp
 
-__all__ = ["PolyglotSwarmApp"]
+__all__ = ["SwarmApp"]

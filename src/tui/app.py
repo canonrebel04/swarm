@@ -6,15 +6,18 @@ Main Textual application structure for the overseer + fleet interface
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from .screens.main import MainScreen
+from .screens.confirm import ConfirmModal
+from .screens.inspect import InspectModal
 from .theme import POLYGLOT_CSS
 from ..orchestrator.agent_manager import agent_manager
 from ..runtimes.registry import registry
 from ..tui.state import AgentRow
+import asyncio
 
 
-class PolyglotSwarmApp(App):
+class SwarmApp(App):
     CSS = POLYGLOT_CSS
-    TITLE = "PolyglotSwarm  ◈  multi-agent runtime"
+    TITLE = "Swarm  ◈  multi-agent runtime"
     SUB_TITLE = "v0.1"
 
     BINDINGS = [
@@ -124,4 +127,106 @@ class PolyglotSwarmApp(App):
         # Push startup event
         role_count = len(self.runtime_registry.list_roles())
         runtime_count = len(self.runtime_registry.list_runtimes())
-        self.push_swarm_event("info", "system", f"PolyglotSwarm initialized ◈ {role_count} roles loaded ◈ {runtime_count} runtimes available")
+        self.push_swarm_event("info", "system", f"Swarm initialized ◈ {role_count} roles loaded ◈ {runtime_count} runtimes available")
+        
+        # Start live clock updates
+        self.set_interval(1.0, self._update_header)
+    
+    def _update_header(self) -> None:
+        """Update header with live agent count and clock."""
+        try:
+            count = len(self.agent_manager._agents) if self.agent_manager else 0
+        except Exception:
+            count = 0
+        from datetime import datetime
+        self.sub_title = f"{count} agents  ◈  {datetime.now().strftime('%H:%M:%S')}"
+    
+    # Action methods for keybindings
+    
+    async def action_kill_selected(self) -> None:
+        """Kill the selected agent after confirmation."""
+        if not self.selected_agent:
+            return
+        
+        # Show confirmation dialog
+        def handle_confirm(result: str) -> None:
+            if result == "yes":
+                self._kill_agent_confirmed(self.selected_agent)
+        
+        self.push_screen(ConfirmModal(f"Kill agent {self.selected_agent}?"), handle_confirm)
+    
+    async def _kill_agent_confirmed(self, agent_name: str) -> None:
+        """Actually kill the agent after confirmation."""
+        try:
+            # Find the agent's session ID
+            session_id = None
+            async with self.agent_manager._lock:
+                for agent_info in self.agent_manager._agents.values():
+                    if agent_info.status.name == agent_name:
+                        session_id = agent_info.session_id
+                        break
+            
+            if session_id:
+                await self.agent_manager.kill(session_id)
+                self.push_swarm_event("kill", agent_name, "terminated by user")
+        except Exception as e:
+            self.push_swarm_event("error", "system", f"Failed to kill agent: {e}")
+    
+    async def action_retry_selected(self) -> None:
+        """Retry the selected agent."""
+        if not self.selected_agent:
+            return
+        
+        try:
+            # Check if agent is still running
+            agents = await self.agent_manager.list_agents()
+            for agent in agents:
+                if agent.name == self.selected_agent and agent.state in ["running", "queued"]:
+                    self.push_swarm_event("error", self.selected_agent, "cannot retry — agent still running")
+                    return
+            
+            # Find the original config
+            original_config = None
+            async with self.agent_manager._lock:
+                for agent_info in self.agent_manager._agents.values():
+                    if agent_info.status.name == self.selected_agent:
+                        original_config = agent_info.config
+                        break
+            
+            if original_config:
+                # Spawn new agent with same config
+                await self.agent_manager.spawn_agent(original_config.runtime, original_config)
+                self.push_swarm_event("spawn", self.selected_agent, "retried by user")
+            else:
+                self.push_swarm_event("error", self.selected_agent, "cannot retry — original config not found")
+        except Exception as e:
+            self.push_swarm_event("error", "system", f"Failed to retry agent: {e}")
+    
+    async def action_inspect_role(self) -> None:
+        """Inspect the selected agent's role contract."""
+        if not self.selected_agent:
+            return
+        
+        try:
+            # Get the agent's role
+            agent_role = None
+            agents = await self.agent_manager.list_agents()
+            for agent in agents:
+                if agent.name == self.selected_agent:
+                    agent_role = agent.role
+                    break
+            
+            if agent_role:
+                # Load the role contract
+                contract_path = f"src/agents/definitions/{agent_role}.md"
+                try:
+                    with open(contract_path, 'r') as f:
+                        contract_md = f.read()
+                    
+                    # Show inspect modal
+                    self.push_screen(InspectModal(self.selected_agent, agent_role, contract_md))
+                except FileNotFoundError:
+                    error_md = f"# No contract found for role: {agent_role}\n\nThe role definition file `{contract_path}` does not exist."
+                    self.push_screen(InspectModal(self.selected_agent, agent_role, error_md))
+        except Exception as e:
+            self.push_swarm_event("error", "system", f"Failed to inspect role: {e}")

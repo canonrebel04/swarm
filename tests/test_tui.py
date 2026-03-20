@@ -140,8 +140,8 @@ class TestTUIIntegration:
     
     def test_basic_tui_structure(self):
         """Test that the main TUI app can be created"""
-        from src.tui.app import PolyglotSwarmApp
+        from src.tui.app import SwarmApp
         
         # Just test that it can be instantiated without errors
-        app = PolyglotSwarmApp()
+        app = SwarmApp()
         assert app is not None

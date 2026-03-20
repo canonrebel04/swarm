@@ -1,4 +1,4 @@
-# PolyglotSwarm Implementation TODO List
+# Swarm Implementation TODO List
 
 ## 📁 Project Setup
 - [x] Create project directory structure according to PROJECT_SCOPE.md
@@ -55,19 +55,21 @@
 - [x] Implement role identity anchoring
 
 ## 🔌 Runtime Adapters (Tier 1)
-- [ ] Claude Code adapter with full capability support
-- [ ] Codex CLI adapter with full capability support
-- [ ] Gemini CLI adapter with full capability support
+- [x] Claude Code adapter with full capability support
+- [x] Codex CLI adapter with full capability support ✅
+- [x] Gemini CLI adapter with full capability support ✅
 - [ ] Aider adapter with task-first implementation
 - [ ] OpenHands CLI adapter with headless support
-- [ ] OpenCode adapter with interactive/task modes
-- [ ] Mistral Vibe adapter with programmatic flags
-- [ ] Hermes adapter for local model support
+- [x] OpenCode adapter with interactive/task modes ✅
+- [x] Mistral Vibe adapter with programmatic flags ✅
+- [x] Hermes adapter for local model support ✅
 - [x] Echo adapter for testing and development
 
+**Total Tier 1 runtimes completed: 6/8**
+
 ## 🛡️ Safety Systems
-- [ ] Implement role locking mechanism
-- [ ] Create anti-drift detection system
+- [x] Implement role locking mechanism ✅
+- [x] Create anti-drift detection system ✅
 - [ ] Build tool policy enforcement
 - [ ] Implement filesystem access controls
 - [ ] Add structured output validation
@@ -86,6 +88,10 @@
 - [x] Add action buttons (nudge, retry, kill)
 - [x] Integrate TUI with orchestrator components (show real data)
 - [x] Wire overseer input → Coordinator (stub-compatible version)
+- [x] Implement Ctrl+K Kill action with confirmation
+- [x] Implement Ctrl+R Retry action for failed agents
+- [x] Implement Ctrl+I Role inspect action with contract viewer
+- [x] Implement live clock in header subtitle with agent count
 
 ## 🔧 Orchestrator Components
 - [ ] Implement overseer logic in `src/orchestrator/overseer.py`

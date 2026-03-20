@@ -198,6 +198,14 @@ class SwarmDB:
         
         return await cursor.fetchall()
 
+    async def clear_events(self) -> None:
+        """Clear all events from the events table."""
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        
+        await self._conn.execute("DELETE FROM events")
+        await self._conn.commit()
+
 
 # Global database instance
 db = SwarmDB()

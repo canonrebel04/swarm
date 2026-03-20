@@ -4,7 +4,7 @@ Test event bus wiring from orchestrator components to TUI
 
 import pytest
 import asyncio
-from src.tui.app import PolyglotSwarmApp
+from src.tui.app import SwarmApp
 from src.orchestrator.agent_manager import agent_manager
 from src.orchestrator.watchdog import watchdog
 from src.orchestrator.coordinator import coordinator, TaskPacket

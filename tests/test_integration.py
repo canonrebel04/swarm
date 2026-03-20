@@ -1,5 +1,5 @@
 """
-Integration tests for PolyglotSwarm components working together.
+Integration tests for Swarm components working together.
 """
 
 import pytest

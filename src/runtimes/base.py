@@ -1,5 +1,5 @@
 """
-Base AgentRuntime interface for PolyglotSwarm.
+Base AgentRuntime interface for Swarm.
 
 This module defines the core interface that all agent runtimes must implement,
 along with the data structures for agent configuration and status tracking.

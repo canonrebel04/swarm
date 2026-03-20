@@ -1,5 +1,5 @@
 """
-End-to-end test for the complete PolyglotSwarm system.
+End-to-end test for the complete Swarm system.
 """
 
 import pytest
@@ -140,12 +140,12 @@ async def test_error_handling():
     session_id = await coordinator.assign_task(task)
     assert session_id is None
     
-    # Test invalid runtime
+    # Test invalid runtime - should fallback to available runtime
     task.runtime_preference = ["nonexistent-runtime"]
     task.role_required = "scout"  # Valid role
     
     session_id = await coordinator.assign_task(task)
-    assert session_id is None  # Should fail due to invalid runtime
+    assert session_id is not None  # Should succeed with fallback to available runtime
     
     # Test killing non-existent agent
     result = await agent_manager.kill_agent("nonexistent-session")

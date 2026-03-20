@@ -1,10 +1,10 @@
-# PolyglotSwarm
+# Swarm
 
 **Provider-agnostic multi-agent orchestration TUI for coding agents**
 
 ## Overview
 
-PolyglotSwarm is a terminal-first multi-agent orchestration system that supports popular coding-agent CLIs including Claude Code, Codex CLI, Gemini CLI, Aider, OpenHands CLI, OpenCode, Goose, Cline CLI, Qodo Gen CLI, Mistral Vibe, Hermes-based local agents, and OpenClaw.
+Swarm is a terminal-first multi-agent orchestration system that supports popular coding-agent CLIs including Claude Code, Codex CLI, Gemini CLI, Aider, OpenHands CLI, OpenCode, Goose, Cline CLI, Qodo Gen CLI, Mistral Vibe, Hermes-based local agents, and OpenClaw.
 
 ## Features
 
@@ -18,7 +18,7 @@ PolyglotSwarm is a terminal-first multi-agent orchestration system that supports
 
 ```bash
 # Using pip (when published)
-pip install polyglot-swarm
+pip install swarm
 
 # From source
 poetry install
@@ -41,7 +41,7 @@ swarm status
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
-│                        PolyglotSwarm TUI                          │
+│                        Swarm TUI                          │
 ├──────────────────────────────────┬─────────────────────────────────────┤
 │        OVERSEER CHAT         │          AGENT FLEET                │
 │  [User] build feature X      │  lead-1       running   claude      │

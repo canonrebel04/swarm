@@ -42,3 +42,22 @@ class RuntimeRegistry:
 
 # Global registry instance
 registry = RuntimeRegistry()
+
+# Auto-register runtimes on import
+from .echo import EchoRuntime
+from .claude_code import ClaudeCodeRuntime
+from .vibe import VibeRuntime
+from .codex import CodexRuntime
+from .gemini import GeminiRuntime
+from .hermes import HermesRuntime
+from .opencode import OpenCodeRuntime
+from .openclaw import OpenClawRuntime
+
+registry.register(EchoRuntime)
+registry.register(ClaudeCodeRuntime)
+registry.register(VibeRuntime)
+registry.register(CodexRuntime)
+registry.register(GeminiRuntime)
+registry.register(HermesRuntime)
+registry.register(OpenCodeRuntime)
+registry.register(OpenClawRuntime)

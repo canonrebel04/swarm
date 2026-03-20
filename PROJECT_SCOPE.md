@@ -1,6 +1,6 @@
-# PolyglotSwarm — Project Scope & Best Practices
+# Swarm — Project Scope & Best Practices
 
-> **Project Codename:** PolyglotSwarm  
+> **Project Codename:** Swarm  
 > **Inspired by:** [Overstory](https://github.com/jayminwest/overstory)  
 > **Goal:** A provider-agnostic multi-agent orchestration TUI with first-class support for the most popular coding-agent CLIs, including Claude Code, Codex CLI, Gemini CLI, Aider, OpenHands CLI, OpenCode, Goose, Cline CLI, Qodo Gen CLI, Mistral Vibe (`vibe`), Hermes-based local agents, and OpenClaw.
 
@@ -10,7 +10,7 @@
 
 Overstory is one of the strongest references for multi-agent orchestration, but its implementation and defaults are still centered around its own supported runtime stack and workflow assumptions.
 
-Key gaps that PolyglotSwarm addresses:
+Key gaps that Swarm addresses:
 
 - I want support for **all major coding-agent CLIs**, not only one or two.
 - I want a visible **overseer + worker fleet interface**, not only a command-driven orchestration flow.
@@ -80,7 +80,7 @@ A **terminal-first multi-agent orchestration system** where:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
-│                        PolyglotSwarm TUI                          │
+│                        Swarm TUI                          │
 ├──────────────────────────────┬─────────────────────────────────────┤
 │        OVERSEER CHAT         │          AGENT FLEET                │
 │  [User] build feature X      │  lead-1       running   claude      │
@@ -99,7 +99,7 @@ A **terminal-first multi-agent orchestration system** where:
 ### Core Components
 
 ```text
-polyglot-swarm/
+swarm/
   src/
     main.py
     config.py
@@ -186,7 +186,7 @@ polyglot-swarm/
 
 ## 6. Supported Runtime Strategy
 
-PolyglotSwarm should support runtimes in **tiers**, not claim identical parity for every tool on day one.
+Swarm should support runtimes in **tiers**, not claim identical parity for every tool on day one.
 
 ### Tier 1 — Must Support in v1
 
@@ -647,7 +647,7 @@ from .panels.overseer_chat import OverseerChat
 from .panels.agent_fleet import AgentFleet
 from .panels.agent_output import AgentOutput
 
-class PolyglotSwarmApp(App):
+class SwarmApp(App):
     CSS = """
     Screen { layout: vertical; }
     #main { height: 70%; }
@@ -830,7 +830,7 @@ worktree:
 
 ## 18. Key Differences from Overstory
 
-| Feature | Overstory | PolyglotSwarm |
+| Feature | Overstory | Swarm |
 |---------|-----------|---------------|
 | Runtime scope | Focused supported runtime set | Broad coding-agent CLI support |
 | Primary UX | CLI + dashboard | Overseer-first orchestration TUI |
