@@ -24,5 +24,6 @@ required_outputs:
   - repro_scripts
   - validation_status
 handoff_to:
+  - tester
   - reviewer
   - developer

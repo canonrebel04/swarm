@@ -23,5 +23,6 @@ required_outputs:
   - validation_results
   - handoff_documentation
 handoff_to:
+  - developer
   - tester
   - reviewer

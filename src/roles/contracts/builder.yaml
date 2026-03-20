@@ -20,5 +20,6 @@ required_outputs:
   - test_status
   - handoff_notes
 handoff_to:
+  - builder
   - tester
   - reviewer

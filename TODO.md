@@ -36,17 +36,17 @@
 ## 🤖 Agent Roles Implementation
 ### Core Agent Definitions
 - [x] Create `src/agents/definitions/` directory
-- [ ] Write orchestrator.md with multi-project coordination
-- [ ] Write coordinator.md with task decomposition logic
-- [ ] Write supervisor.md with fleet oversight capabilities
-- [ ] Write lead.md with team coordination responsibilities
+- [x] Write orchestrator.md with multi-project coordination
+- [x] Write coordinator.md with task decomposition logic
+- [x] Write supervisor.md with fleet oversight capabilities
+- [x] Write lead.md with team coordination responsibilities
 - [x] Write scout.md with exploration and fact-gathering focus
 - [x] Write developer.md for complex implementation tasks
 - [x] Write builder.md for fast execution tasks
 - [x] Write tester.md for validation and testing
-- [ ] Write reviewer.md for code review processes
-- [ ] Write merger.md for branch merging logic
-- [ ] Write monitor.md for health monitoring
+- [x] Write reviewer.md for code review processes
+- [x] Write merger.md for branch merging logic
+- [x] Write monitor.md for health monitoring
 
 ### Role Contracts
 - [x] Create YAML contracts for each role in `src/roles/contracts/`

@@ -56,10 +56,10 @@ class RoleLocker:
                 contract = RoleContract(
                     name=role_name,
                     description=contract_data.get('description', ''),
-                    allowed_handoff_to=contract_data.get('allowed_handoff_to', []),
+                    allowed_handoff_to=contract_data.get('handoff_to', []),
                     forbidden_handoff_to=contract_data.get('forbidden_handoff_to', []),
-                    allowed_actions=contract_data.get('allowed_actions', []),
-                    forbidden_actions=contract_data.get('forbidden_actions', [])
+                    allowed_actions=contract_data.get('may', []),
+                    forbidden_actions=contract_data.get('may_not', [])
                 )
                 self.role_contracts[role_name] = contract
                 

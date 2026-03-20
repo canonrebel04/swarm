@@ -19,6 +19,7 @@ required_outputs:
   - evidence_citations
   - recommendations
 handoff_to:
+  - scout
   - lead
   - developer
   - builder
