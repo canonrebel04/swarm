@@ -29,3 +29,13 @@
 - [x] Initial Web-based Dashboard (read-only)
 - [x] User authentication and multi-tenancy basics
 - [x] Milestone 3 final polish and audit
+
+## Milestone 4 — Full Web Experience (Completed)
+
+### Phase 15 — Web UI (Completed)
+- [x] Interactive Fleet Management (spawning/killing agents)
+- [x] Real-time Task Graph Visualization (SVG/Canvas)
+- [x] Chat Interface for Overseer Interaction
+- [x] Config & API Key Management via Web
+- [x] Dark/Light mode theme engine (Initial implementation)
+
