@@ -106,6 +106,9 @@ class ClaudeCodeRuntime(AgentRuntime):
         system_prompt = self._build_system_prompt(config)
         tool_flags    = self._build_tool_flags(config)
         session_name  = f"polyglot-{config.name}-{uuid.uuid4().hex[:6]}"
+        
+        # Determine permission mode
+        perm_mode = "readOnly" if config.read_only else "acceptEdits"
 
         cmd = [
             "claude",
@@ -113,7 +116,7 @@ class ClaudeCodeRuntime(AgentRuntime):
             "--output-format", "stream-json",   # NDJSON token stream
             "--system-prompt", system_prompt,
             "--name", session_name,
-            "--permission-mode", "acceptEdits", # auto-accept file edits
+            "--permission-mode", perm_mode,
             "--add-dir", config.worktree_path,
             "--model", config.model or "sonnet",
             "--effort", self._effort_for_role(config.role),

@@ -5,8 +5,34 @@ Run before TUI or via: swarm setup
 import getpass
 import os
 import sys
+import asyncio
 from pathlib import Path
 import yaml
+import aiohttp
+
+# Fallback models in case API fetch fails
+FALLBACK_MISTRAL = [
+    "mistral-large-latest",
+    "mistral-medium-latest",
+    "mistral-small-latest",
+    "codestral-latest",
+    "open-mistral-nemo"
+]
+
+FALLBACK_OPENAI = [
+    "o3-mini",
+    "o1-preview",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gpt-4-turbo"
+]
+
+FALLBACK_OLLAMA = [
+    "hermes",
+    "llama3",
+    "mistral",
+    "phi3"
+]
 
 # All known provider/model combos across all 8 runtimes
 PROVIDER_CATALOG = [
@@ -14,13 +40,11 @@ PROVIDER_CATALOG = [
     ("Anthropic  · claude-opus-4-5      (best quality)",   "claude-code", "claude-opus-4-5",          "ANTHROPIC_API_KEY"),
     ("Anthropic  · claude-sonnet-4-5    (fast + capable)", "claude-code", "claude-sonnet-4-5",         "ANTHROPIC_API_KEY"),
     ("Anthropic  · claude-haiku-3-5     (cheapest)",       "claude-code", "claude-haiku-3-5",          "ANTHROPIC_API_KEY"),
-    ("OpenAI     · o3                   (best reasoning)", "codex",       "o3",                        "OPENAI_API_KEY"),
-    ("OpenAI     · o4-mini              (fast reasoning)", "codex",       "o4-mini",                   "OPENAI_API_KEY"),
+    ("OpenAI     · (fetch dynamic list via API)",          "codex",       "__dynamic__",               "OPENAI_API_KEY"),
     ("Google     · gemini-2.5-pro       (deep analysis)",  "gemini",      "gemini-2.5-pro",            "GOOGLE_API_KEY"),
     ("Google     · gemini-2.5-flash     (fast)",           "gemini",      "gemini-2.5-flash",          "GOOGLE_API_KEY"),
-    ("Mistral    · mistral-large-latest (default)",        "vibe",        "mistral-large-latest",      "MISTRAL_API_KEY"),
-    ("Mistral    · codestral-latest     (code-focused)",   "vibe",        "codestral-latest",          "MISTRAL_API_KEY"),
-    ("Nous       · hermes (local/any)",                    "hermes",      "hermes",                    None),
+    ("Mistral    · (fetch dynamic list via API)",          "vibe",        "__dynamic__",               "MISTRAL_API_KEY"),
+    ("Ollama     · (fetch local models via API)",          "hermes",      "__dynamic__",               None),
     ("Custom     · enter manually...",                     "__custom__",  "",                          None),
 ]
 
@@ -60,6 +84,10 @@ def _clear_line() -> None:
 
 def run_setup() -> None:
     """Full interactive setup wizard — called by `swarm setup`."""
+    asyncio.run(_run_setup_async())
+
+
+async def _run_setup_async() -> None:
     os.system("clear")
     print(_cyan("╔══════════════════════════════════════════════════════╗"))
     print(_cyan("║") + _bold("        🤖  Swarm — Model & Provider Setup          ") + _cyan("║"))
@@ -94,22 +122,69 @@ def run_setup() -> None:
 
     label, runtime_key, model_str, env_var = PROVIDER_CATALOG[choice]
 
+    # ── Handle Dynamic Model List ──────────────────────────────────────────
+    if model_str == "__dynamic__":
+        print()
+        
+        # We need the key now to fetch (except for Ollama)
+        api_key = None
+        if env_var:
+            print(_bold(f"  Fetching {runtime_key} model list..."))
+            api_key = os.environ.get(env_var) or _read_env_file(env_var)
+            if not api_key:
+                print(_dim(f"  {env_var} not found. Please provide it to fetch models."))
+                api_key = _secure_input(f"  Enter {runtime_key} API Key: ")
+                if api_key:
+                    _write_env_file(env_var, api_key)
+        
+        if runtime_key == "vibe":
+            models = await _fetch_models_via_api("https://api.mistral.ai", api_key, FALLBACK_MISTRAL)
+        elif runtime_key == "codex":
+            models = await _fetch_models_via_api("https://api.openai.com", api_key, FALLBACK_OPENAI)
+        elif runtime_key == "hermes":
+            models = await _fetch_models_via_api("http://localhost:11434", "ollama", FALLBACK_OLLAMA)
+        else:
+            models = ["default"]
+
+        print(f"  Available models ({len(models)} found):")
+        for i, m in enumerate(models):
+            print(f"    [{i + 1:2}]  {m}")
+        
+        while True:
+            try:
+                raw = input(_bold(f"  Select [1-{len(models)}]: ")).strip()
+                m_choice = int(raw) - 1
+                if 0 <= m_choice < len(models):
+                    model_str = models[m_choice]
+                    break
+            except (ValueError, KeyboardInterrupt, EOFError):
+                print("\n  Aborted.")
+                return
+
     # ── Step 2: API key ────────────────────────────────────────────────────────
     if env_var:
-        print()
-        print(_bold(f"Step 2/3 — API key for {env_var}"))
+        # Check if we already have it (might have been entered in dynamic step)
         existing = os.environ.get(env_var) or _read_env_file(env_var)
+        
         if existing:
+            # Skip key entry if we just set it or it exists, unless they want to change
+            # But let's show current status
+            print()
+            print(_bold(f"Step 2/3 — API key for {env_var}"))
             masked = "•" * len(existing)
             print(f"  Current value: {_dim(masked)} (already set)")
             raw_key = _secure_input("  New key (Enter to keep existing): ")
+            if raw_key:
+                _write_env_file(env_var, raw_key)
+                print(_green(f"  ✓ Saved to .env"))
         else:
+            print()
+            print(_bold(f"Step 2/3 — API key for {env_var}"))
             print(_dim("  No existing key found in environment or .env file."))
             raw_key = _secure_input("  Enter API key: ")
-
-        if raw_key:
-            _write_env_file(env_var, raw_key)
-            print(_green(f"  ✓ Saved to .env"))
+            if raw_key:
+                _write_env_file(env_var, raw_key)
+                print(_green(f"  ✓ Saved to .env"))
     else:
         print()
         print(_dim("Step 2/3 — API key: not required for this provider, skipping."))
@@ -178,7 +253,11 @@ def _read_env_file(key: str) -> str | None:
 
 def _write_env_file(key: str, value: str) -> None:
     env_file = Path(".env")
-    lines = env_file.read_text().splitlines() if env_file.exists() else []
+    if env_file.exists():
+        lines = env_file.read_text().splitlines()
+    else:
+        lines = []
+    
     updated = False
     for i, line in enumerate(lines):
         if line.startswith(f"{key}="):
@@ -198,6 +277,30 @@ def _secure_input(prompt: str) -> str:
         # Fallback to regular input if getpass fails
         print("  ⚠️  Secure input unavailable, falling back to regular input")
         return input(prompt).strip()
+
+
+async def _fetch_models_via_api(base_url: str, api_key: str | None, fallback: list[str]) -> list[str]:
+    if not api_key:
+        return fallback
+    
+    base_url = base_url.rstrip("/")
+    url = f"{base_url}/v1/models"
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=5.0
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    models = [m["id"] for m in data.get("data", []) if "id" in m]
+                    if models:
+                        return sorted(models)
+    except Exception:
+        pass
+    return fallback
 
 
 def _default_runtime_block(runtime_key: str) -> dict:

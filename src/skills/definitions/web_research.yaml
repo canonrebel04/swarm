@@ -1,0 +1,8 @@
+description: "Advanced web searching and fact-gathering capabilities."
+version: "1.0.0"
+may:
+  - web_search
+  - web_fetch
+  - cite_evidence
+metadata:
+  category: "research"

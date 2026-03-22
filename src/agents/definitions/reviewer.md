@@ -26,3 +26,8 @@ Audit completed work (code, documentation, configuration), provide feedback for 
 
 ## Handoff
 Approved work is handed off to the **Merger**. Rejected work is returned to the original agent (Developer/Builder).
+
+When your task is complete, output this JSON on its own line:
+```json
+{"role":"reviewer","status":"approved|rejected","summary":"...","critique":"detailed explanation of why rejected or how to improve","handoff_to":"merger|developer|builder"}
+```

@@ -3,10 +3,25 @@ Test suite for safety systems: role locker and anti-drift monitor.
 """
 
 import pytest
+import os
+import asyncio
 from unittest.mock import MagicMock
 
 from src.safety.role_locker import RoleLocker, RoleViolation, RoleContract
 from src.safety.anti_drift import AntiDriftMonitor, DriftViolation
+from src.messaging.event_bus import event_bus
+
+@pytest.fixture(autouse=True)
+async def setup_db():
+    """Initialize in-memory database for event bus during tests."""
+    # Use a test-specific database path
+    test_db = ".polyglot/test_safety.db"
+    event_bus.db.db_path = test_db
+    await event_bus.db.connect()
+    yield
+    await event_bus.db.close()
+    if os.path.exists(test_db):
+        os.remove(test_db)
 
 
 # Test RoleLocker
@@ -78,7 +93,8 @@ class TestAntiDriftMonitor:
         assert 'forbidden_tools' in constraints
         assert len(constraints['forbidden_tools']) > 0
     
-    def test_scout_write_violation(self):
+    @pytest.mark.asyncio
+    async def test_scout_write_violation(self):
         """Test detection of write violation by scout."""
         monitor = AntiDriftMonitor()
         
@@ -88,7 +104,7 @@ class TestAntiDriftMonitor:
         
         # Output containing forbidden write action
         output = "Analyzing files...\n[write] src/auth.py\nDone"
-        violations = monitor.monitor_output(output, 'scout')
+        violations = await monitor.monitor_output(output, 'scout')
         
         assert len(violations) == 1
         assert violations[0].role == 'scout'
@@ -100,78 +116,86 @@ class TestAntiDriftMonitor:
         assert events[0][0] == 'warn'
         assert events[0][1] == 'scout'
     
-    def test_reviewer_edit_violation(self):
+    @pytest.mark.asyncio
+    async def test_reviewer_edit_violation(self):
         """Test detection of edit violation by reviewer."""
         monitor = AntiDriftMonitor()
         
         output = "Reviewing code...\n[edit] README.md\nComplete"
-        violations = monitor.monitor_output(output, 'reviewer')
+        violations = await monitor.monitor_output(output, 'reviewer')
         
         assert len(violations) == 1
         assert violations[0].role == 'reviewer'
         assert '[edit]' in violations[0].tool_line
     
-    def test_monitor_write_violation(self):
+    @pytest.mark.asyncio
+    async def test_monitor_write_violation(self):
         """Test detection of write violation by monitor."""
         monitor = AntiDriftMonitor()
         
         output = "Monitoring system...\n[write] log.txt\nDone"
-        violations = monitor.monitor_output(output, 'monitor')
+        violations = await monitor.monitor_output(output, 'monitor')
         
         assert len(violations) == 1
         assert violations[0].role == 'monitor'
     
-    def test_tester_git_push_violation(self):
+    @pytest.mark.asyncio
+    async def test_tester_git_push_violation(self):
         """Test detection of git push violation by tester."""
         monitor = AntiDriftMonitor()
         
         output = "Running tests...\n[bash] git push origin main\nComplete"
-        violations = monitor.monitor_output(output, 'tester')
+        violations = await monitor.monitor_output(output, 'tester')
         
         assert len(violations) == 1
         assert violations[0].role == 'tester'
         assert 'git push' in violations[0].tool_line
     
-    def test_no_violation_developer(self):
+    @pytest.mark.asyncio
+    async def test_no_violation_developer(self):
         """Test that developer actions don't trigger violations."""
         monitor = AntiDriftMonitor()
         
         # Developer should be allowed to write/edit
         output = "Implementing feature...\n[write] src/feature.py\n[edit] tests/test_feature.py\nDone"
-        violations = monitor.monitor_output(output, 'developer')
+        violations = await monitor.monitor_output(output, 'developer')
         
         assert len(violations) == 0
     
-    def test_no_violation_unknown_role(self):
+    @pytest.mark.asyncio
+    async def test_no_violation_unknown_role(self):
         """Test that unknown roles don't trigger violations."""
         monitor = AntiDriftMonitor()
         
         output = "Doing something...\n[write] file.txt\nDone"
-        violations = monitor.monitor_output(output, 'unknown_role')
+        violations = await monitor.monitor_output(output, 'unknown_role')
         
         assert len(violations) == 0
     
-    def test_multiple_violations_same_line(self):
+    @pytest.mark.asyncio
+    async def test_multiple_violations_same_line(self):
         """Test that only first violation per line is reported."""
         monitor = AntiDriftMonitor()
         
         # Line with multiple forbidden patterns
         output = "[write] file.txt and [edit] other.txt"
-        violations = monitor.monitor_output(output, 'scout')
+        violations = await monitor.monitor_output(output, 'scout')
         
         # Should only report one violation for this line
         assert len(violations) == 1
     
-    def test_case_insensitive_violation_detection(self):
+    @pytest.mark.asyncio
+    async def test_case_insensitive_violation_detection(self):
         """Test that violation detection is case insensitive."""
         monitor = AntiDriftMonitor()
         
         output = "[WRITE] file.txt"
-        violations = monitor.monitor_output(output, 'scout')
+        violations = await monitor.monitor_output(output, 'scout')
         
         assert len(violations) == 1
     
-    def test_add_custom_role_constraints(self):
+    @pytest.mark.asyncio
+    async def test_add_custom_role_constraints(self):
         """Test adding custom constraints for a role."""
         monitor = AntiDriftMonitor()
         
@@ -188,7 +212,7 @@ class TestAntiDriftMonitor:
         
         # Test the new constraint
         output = "[delete] old_file.txt"
-        violations = monitor.monitor_output(output, 'custom_role')
+        violations = await monitor.monitor_output(output, 'custom_role')
         assert len(violations) == 1
 
 
@@ -210,7 +234,8 @@ class TestSafetyIntegration:
         with pytest.raises(RoleViolation):
             locker.validate_handoff('reviewer', 'scout')  # Reviewers shouldn't handoff to scouts
     
-    def test_anti_drift_with_agent_output(self):
+    @pytest.mark.asyncio
+    async def test_anti_drift_with_agent_output(self):
         """Test anti-drift monitoring with realistic agent output."""
         monitor = AntiDriftMonitor()
         
@@ -223,7 +248,7 @@ Analyzing dependencies...
 Complete: exploration complete
 """
         
-        violations = monitor.monitor_output(scout_output, 'scout')
+        violations = await monitor.monitor_output(scout_output, 'scout')
         assert len(violations) == 1
         assert 'exploration_notes.md' in violations[0].tool_line
     
@@ -247,7 +272,8 @@ Complete: exploration complete
                 # Some transitions might be invalid based on contracts
                 pass
     
-    def test_event_callback_integration(self):
+    @pytest.mark.asyncio
+    async def test_event_callback_integration(self):
         """Test that anti-drift monitor properly uses event callbacks."""
         monitor = AntiDriftMonitor()
         
@@ -260,7 +286,7 @@ Complete: exploration complete
         
         # Trigger a violation
         output = "[write] forbidden.txt"
-        monitor.monitor_output(output, 'scout')
+        await monitor.monitor_output(output, 'scout')
         
         # Check event was emitted
         assert len(emitted_events) == 1

@@ -52,6 +52,11 @@ from .gemini import GeminiRuntime
 from .hermes import HermesRuntime
 from .opencode import OpenCodeRuntime
 from .openclaw import OpenClawRuntime
+from .goose import GooseRuntime
+from .cline import ClineRuntime
+from .qodo import QodoRuntime
+from .ssh import SSHRuntime
+from .docker import DockerRuntime
 
 registry.register(EchoRuntime)
 registry.register(ClaudeCodeRuntime)
@@ -61,3 +66,8 @@ registry.register(GeminiRuntime)
 registry.register(HermesRuntime)
 registry.register(OpenCodeRuntime)
 registry.register(OpenClawRuntime)
+registry.register(GooseRuntime)
+registry.register(ClineRuntime)
+registry.register(QodoRuntime)
+registry.register(SSHRuntime)
+registry.register(DockerRuntime)

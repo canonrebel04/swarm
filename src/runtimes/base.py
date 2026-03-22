@@ -24,6 +24,11 @@ class AgentConfig:
     blocked_tools: list[str] = field(default_factory=list)
     read_only: bool = False
     can_spawn_children: bool = False
+    skills: list[str] = field(default_factory=list)
+    remote_host: Optional[str] = None
+    remote_user: Optional[str] = None
+    remote_path: Optional[str] = None
+    container_image: Optional[str] = None
     extra_env: dict[str, str] = field(default_factory=dict)
 
 

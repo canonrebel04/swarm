@@ -232,16 +232,25 @@ class MergeManager:
                 os.chdir(original_dir)
                 
         except subprocess.CalledProcessError as e:
+            # Extract conflicting files from git output
+            conflicting_files = []
+            for line in e.stdout.split('\n'):
+                if line.startswith("CONFLICT"):
+                    parts = line.split(":")
+                    if len(parts) > 1:
+                        conflicting_files.append(parts[1].strip().split()[1])
+
             await event_bus.emit(
-                "error", "merge-manager",
+                "merge_conflict", "merge-manager",
                 {
-                    "message": f"Auto-merge failed for {handoff.task_title}",
-                    "error": e.stderr,
-                    "worktree": handoff.worktree_branch
+                    "task_title": handoff.task_title,
+                    "conflicting_files": conflicting_files or ["unknown"],
+                    "from_agent": handoff.from_agent,
+                    "error": e.stderr or e.stdout
                 }
             )
-            # Fall back to manual merge
-            await self._handle_merge_conflicts(handoff, ["auto-merge_failed"])
+            # Fall back to manual/agentic merge
+            await self._handle_merge_conflicts(handoff, conflicting_files or ["merge_failed"])
         except Exception as e:
             await event_bus.emit(
                 "error", "merge-manager",

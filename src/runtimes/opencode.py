@@ -229,6 +229,14 @@ class OpenCodeRuntime(AgentRuntime):
         # Send initial task prompt asynchronously — don't block spawn
         system_prompt = self._build_system_prompt(config)
         tools         = self.ROLE_TOOLS.get(config.role)  # None = unrestricted
+        
+        # If read_only is set, restrict tools further
+        if config.read_only:
+            read_only_tools = {"read", "ls", "glob", "grep"}
+            if tools is not None:
+                tools = [t for t in tools if t in read_only_tools]
+            else:
+                tools = list(read_only_tools)
 
         body: dict = {
             "parts": [{"type": "text", "text": config.task}],

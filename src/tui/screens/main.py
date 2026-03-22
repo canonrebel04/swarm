@@ -7,6 +7,7 @@ from src.tui.panels.agent_fleet   import AgentFleetPanel
 from src.tui.panels.agent_output  import AgentOutputPanel
 from src.tui.panels.event_log     import EventLogPanel
 from src.tui.panels.overseer_chat import OverseerChatPanel
+from src.tui.panels.task_graph    import TaskGraphPanel
 
 
 class MainScreen(Screen):
@@ -35,13 +36,14 @@ class MainScreen(Screen):
         layout: horizontal;
     }
 
-    /* Left column: overseer 60% + events 40% */
+    /* Left column: overseer 40% + graph 30% + events 30% */
     #left-col {
         width: 2fr;
         layout: vertical;
     }
-    OverseerChatPanel { height: 3fr; }
-    EventLogPanel     { height: 2fr; }
+    OverseerChatPanel { height: 40%; }
+    TaskGraphPanel    { height: 30%; border: solid $primary 10%; }
+    EventLogPanel     { height: 30%; }
 
     /* Right column: fleet top 55% + output 45% */
     #right-col {
@@ -74,6 +76,8 @@ class MainScreen(Screen):
         with Horizontal(id="body"):
             with Vertical(id="left-col"):
                 yield OverseerChatPanel()
+                # Task graph will be updated by the app once coordinator is ready
+                yield TaskGraphPanel(id="task-graph")
                 yield EventLogPanel()
             with Vertical(id="right-col"):
                 yield AgentFleetPanel()
@@ -82,7 +86,7 @@ class MainScreen(Screen):
         # ── Bottom footerbar (bindings, like btop's bottom bar) ───────────
         with Horizontal(id="footerbar"):
             yield Static(
-                "^q Quit  ^k Kill  ^r Retry  ^n New  F2 Model  ^i Role  ^p Palette",
+                "^q Quit  ^k Kill  ^r Retry  ^n New  F2 Model  ^i Role  ^s Skills  ^p Palette",
                 id="footer-bindings",
             )
             yield Static("0 agents  ·  0 events", id="footer-stats")

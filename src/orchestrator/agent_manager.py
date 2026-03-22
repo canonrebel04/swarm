@@ -2,12 +2,13 @@
 Agent manager for tracking and managing active agents.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, AsyncIterator
 from dataclasses import dataclass
 import asyncio
 import uuid
 from ..runtimes.base import AgentConfig, AgentStatus
 from ..runtimes.registry import registry
+from ..safety.anti_drift import anti_drift_monitor
 
 
 @dataclass
@@ -189,18 +190,21 @@ class AgentManager:
         Yields:
             Lines of output from the agent
         """
+        # Get agent info outside the loop to avoid holding lock while yielding
         async with self._lock:
             agent_info = self._agents.get(session_id)
             if not agent_info:
-                # Return empty async iterator for non-existent agent
                 return
-                yield  # This line is never reached but makes it a proper async generator
-            
-            try:
-                async for line in agent_info.runtime_instance.stream_output(session_id):
-                    yield line
-            except Exception as e:
-                yield f"Error streaming output: {e}"
+
+        try:
+            async for line in agent_info.runtime_instance.stream_output(session_id):
+                # Check for drift violations
+                await anti_drift_monitor.monitor_output(
+                    line, agent_info.config.role, session_id
+                )
+                yield line
+        except Exception as e:
+            yield f"Error streaming output: {e}"
 
     async def list_agents(self) -> List[AgentStatus]:
         """
@@ -253,7 +257,3 @@ class AgentManager:
 
 # Global agent manager instance
 agent_manager = AgentManager()
-
-
-# Note: The implementation above works for Python 3.6+
-# No additional compatibility code needed

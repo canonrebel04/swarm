@@ -58,8 +58,7 @@
 - [x] Claude Code adapter with full capability support
 - [x] Codex CLI adapter with full capability support ✅
 - [x] Gemini CLI adapter with full capability support ✅
-- [ ] Aider adapter with task-first implementation
-- [ ] OpenHands CLI adapter with headless support
+
 - [x] OpenCode adapter with interactive/task modes ✅
 - [x] Mistral Vibe adapter with programmatic flags ✅
 - [x] Hermes adapter for local model support ✅

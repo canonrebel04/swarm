@@ -2,13 +2,13 @@
 Coordinator for decomposing tasks and assigning agents.
 """
 
-from typing import List, Dict, Optional
-from dataclasses import dataclass
+from typing import List, Dict, Optional, Any
+from dataclasses import dataclass, field
 import asyncio
 import os
 import time
 import json
-from ..runtimes.base import AgentConfig
+from ..runtimes.base import AgentConfig, AgentStatus
 from ..roles.registry import role_registry
 from .agent_manager import agent_manager
 
@@ -22,17 +22,24 @@ class TaskPacket:
     role_required: str
     runtime_preference: List[str]
     priority: str = "medium"
-    files_in_scope: List[str] = None
+    status: str = "pending" # pending, blocked, ready, active, completed, failed
+    potential_conflict: bool = False
+    conflict_details: str = ""
+    files_in_scope: List[str] = field(default_factory=list)
     acceptance_criteria: List[str] = None
     parent_agent: Optional[str] = None
+    skills: List[str] = field(default_factory=list)
+    depends_on: List[str] = field(default_factory=list)
 
 
 class Coordinator:
     """Coordinate task decomposition and agent assignment."""
 
     def __init__(self):
-        self._task_queue = asyncio.Queue()
-        self._active_tasks = {}
+        self._active_tasks: Dict[str, TaskPacket] = {}
+        self._task_queue: List[TaskPacket] = []
+        self._task_history: List[TaskPacket] = []
+        self._push_event_callback = None
         self._role_priority = {
             "scout": 1,      # First to explore
             "developer": 2,  # Complex implementation
@@ -40,6 +47,31 @@ class Coordinator:
             "tester": 4,     # Validation
             "reviewer": 5,   # Final review
             "merger": 6      # Merge resolution
+        }
+        self._role_tool_policy = {
+            "scout": {
+                "allowed": ["Read", "Bash(find:*)", "Bash(grep:*)", "Bash(cat:*)", "Bash(ls:*)"],
+                "blocked": ["Edit", "Write", "Bash(git:commit:*)", "Bash(git:push:*)"]
+            },
+            "reviewer": {
+                "allowed": ["Read", "Bash(git:diff:*)", "Bash(git:log:*)", "Bash(grep:*)"],
+                "blocked": ["Edit", "Write", "Bash(git:commit:*)"]
+            },
+            "monitor": {
+                "allowed": ["Read", "Bash(ps:*)", "Bash(ls:*)", "Bash(git:status:*)"],
+                "blocked": ["Edit", "Write"]
+            },
+            "coordinator": {
+                "allowed": ["Read", "Bash(ls:*)"],
+                "blocked": ["Edit", "Write"]
+            }
+        }
+        self._role_read_only = {
+            "scout": True,
+            "reviewer": True,
+            "monitor": True,
+            "coordinator": True,
+            "orchestrator": True
         }
         self._on_task_assigned_callbacks = []
         self._on_handoff_callbacks = []
@@ -50,310 +82,39 @@ class Coordinator:
         self._on_task_assigned_callbacks.append(callback)
 
     def register_handoff_callback(self, callback):
-        """Register a callback to be called when a task is handed off."""
+        """Register a callback to be called when a handoff is triggered."""
         self._on_handoff_callbacks.append(callback)
-    
+
     def register_event_callback(self, callback):
-        """Register a callback to push events to the event log."""
+        """Register a callback for system events."""
         self._push_event_callback = callback
-    
-    def initialize_merge_manager(self):
-        """Initialize the merge manager."""
-        if self._merge_manager is None:
-            from .merge_manager import MergeManager
-            self._merge_manager = MergeManager(self)
-        return self._merge_manager
-    
-    def trigger_handoff(self, from_agent: str, to_role: str, task_title: str, 
-                       worktree_branch: str = "main", status: str = "done"):
-        """Trigger handoff callbacks when a task is handed off."""
-        # Emit handoff event for merge manager
-        asyncio.create_task(self._emit_handoff_event(from_agent, to_role, task_title, worktree_branch, status))
-        
-        # Trigger regular callbacks
-        for callback in self._on_handoff_callbacks:
-            try:
-                callback(from_agent, to_role, task_title)
-            except Exception:
-                pass  # Don't let callback failures break the coordinator
-    
-    async def _emit_handoff_event(self, from_agent: str, to_role: str, task_title: str, 
-                                  worktree_branch: str, status: str) -> None:
-        """Emit handoff event to event bus and merge manager."""
-        # Initialize merge manager if not already done
-        if self._merge_manager is None:
-            self.initialize_merge_manager()
-        
-        # Emit event to event bus
-        await event_bus.emit(
-            "handoff", "coordinator",
-            {
-                "from_agent": from_agent,
-                "to_agent": to_role,
-                "status": status,
-                "task_title": task_title,
-                "worktree_branch": worktree_branch
-            }
-        )
-    
-    async def handle_user_input(self, text: str):
+
+    async def decompose_goal(self, objective: str) -> List[TaskPacket]:
         """
-        Handle user input and decompose into tasks.
+        Use the Overseer to decompose a high-level goal into tasks.
         
         Args:
-            text: User input text
-            
-        Yields:
-            Task decomposition result as streaming tokens
-            
-        Note: This is designed as an async generator for LLM streaming.
-        """
-        # Check if any runtimes are available before proceeding
-        from ..runtimes.registry import registry
-        available_runtimes = registry.list_available()
-        if not available_runtimes:
-            error_msg = "No runtimes available. Please configure at least one runtime in config.yaml."
-            if hasattr(self, '_push_event_callback') and self._push_event_callback:
-                self._push_event_callback("error", "coordinator", error_msg)
-            yield error_msg
-            return
-        
-        # Decompose the task
-        tasks = await self.decompose_task(text)
-        
-        # Format the response
-        task_titles = [task.title for task in tasks]
-        result = f"Decomposed into {len(tasks)} tasks: {', '.join(task_titles)}"
-        
-        # Push event about task dispatch
-        if hasattr(self, '_push_event_callback') and self._push_event_callback:
-            self._push_event_callback("info", "coordinator", f"dispatched {len(tasks)} tasks")
-        
-        # Yield the response as tokens (stub-compatible with real LLM streaming)
-        yield result
-
-    def _get_swarm_state(self) -> dict:
-        """Get current swarm state from agent manager."""
-        from .agent_manager import agent_manager
-        
-        agents = agent_manager.get_all_agents()
-        return {
-            "active_agents": [{
-                "name": agent.config.name,
-                "role": agent.config.role,
-                "status": agent.status.state,
-                "runtime": agent.config.runtime
-            } for agent in agents],
-            "agent_count": len(agents),
-            "timestamp": time.time()
-        }
-    
-    def _get_codebase_context(self) -> dict:
-        """Get codebase context for orchestrator."""
-        # Try to get from CodebaseIndex if available
-        try:
-            from src.memory.codebase_index import CodebaseIndex
-            index = CodebaseIndex()
-            return index.mem_get_all("orchestrator", "orchestrator") or {}
-        except ImportError:
-            # Fallback to empty context if CodebaseIndex not available
-            return {
-                "recent_files": [],
-                "key_symbols": [],
-                "project_structure": "unknown"
-            }
-    
-    def _build_overseer_prompt(self, user_input: str, swarm_state: dict, codebase_context: dict) -> str:
-        """Build the overseer prompt with all context."""
-        
-        # Format swarm state
-        agents_info = "\n".join([
-            f"  - {agent['name']} ({agent['role']}): {agent['status']} on {agent['runtime']}"
-            for agent in swarm_state['active_agents']
-        ]) if swarm_state['active_agents'] else "  (no active agents)"
-        
-        # Format codebase context
-        recent_files = "\n".join([
-            f"  - {f}"
-            for f in codebase_context.get('recent_files', [])[:5]
-        ]) if codebase_context.get('recent_files') else "  (no recent files)"
-        
-        return f"""You are the Swarm Overseer. Your role is to decompose high-level tasks into specific sub-tasks for specialized agents.
-
-CURRENT SWARM STATE:
-Active Agents: {swarm_state['agent_count']}
-{agents_info}
-
-CODEBASE CONTEXT:
-Recent Files:
-{recent_files}
-
-USER REQUEST:
-{user_input}
-
-RESPONSE FORMAT:
-Return ONLY a valid JSON array of TaskPacket objects. Each TaskPacket must have:
-- title: concise task title
-- role_required: agent role (scout, developer, builder, tester, reviewer, merger)
-- runtime_hint: preferred runtime or null
-- task_description: detailed description
-- depends_on: array of task titles this depends on (empty if none)
-- priority: 1-5 (1=highest, 5=lowest)
-
-EXAMPLE:
-[
-  {{
-    "title": "Analyze authentication system",
-    "role_required": "scout",
-    "runtime_hint": "mistral-vibe",
-    "task_description": "Explore the auth system to understand current implementation",
-    "depends_on": [],
-    "priority": 2
-  }},
-  {{
-    "title": "Implement JWT validation",
-    "role_required": "developer",
-    "runtime_hint": "claude-code",
-    "task_description": "Add JWT validation to the authentication system",
-    "depends_on": ["Analyze authentication system"],
-    "priority": 1
-  }}
-]
-
-IMPORTANT: Your response MUST be valid JSON and ONLY JSON - no explanations or markdown.
-
-NOTE: Prefer mistral-vibe runtime for orchestration tasks as it's optimized for this role."""
-    
-    def _select_orchestrator_runtime(self, available_runtimes: List[str]) -> str:
-        """Select the best runtime for orchestrator role."""
-        # Make Vibe the default runtime for orchestrator role
-        if "mistral-vibe" in available_runtimes:
-            return "mistral-vibe"
-        
-        # Prefer OpenClaw if Vibe not available
-        if "openclaw" in available_runtimes:
-            return "openclaw"
-        
-        # Fallback to other runtimes that can handle orchestration
-        for runtime in ["hermes", "gemini", "claude-code"]:
-            if runtime in available_runtimes:
-                return runtime
-        
-        # Return first available as last resort
-        return available_runtimes[0]
-    
-    async def _execute_llm_call(self, runtime_name: str, prompt: str):
-        """Execute LLM call and stream results."""
-        from ..runtimes.registry import registry
-        from ..runtimes.base import AgentConfig
-        
-        try:
-            # Get the runtime class
-            runtime_class = registry.get(runtime_name)
-            if not runtime_class:
-                yield f"Error: Runtime {runtime_name} not found"
-                return
-            
-            # Create a temporary config for the orchestrator
-            config = AgentConfig(
-                name="overseer",
-                role="orchestrator",
-                task=prompt,
-                worktree_path=".",
-                runtime=runtime_name,
-                system_prompt_path=None
-            )
-            
-            # Spawn the agent
-            runtime_instance = runtime_class()
-            session_id = await runtime_instance.spawn(config)
-            
-            # Stream the output
-            output_tokens = []
-            async for token in runtime_instance.stream_output(session_id):
-                output_tokens.append(token)
-                yield token
-            
-            # Clean up
-            await runtime_instance.kill(session_id)
-            
-            # Parse the output and create tasks
-            full_output = "".join(output_tokens)
-            tasks = self._parse_llm_output(full_output)
-            
-            # Store tasks for later processing
-            self._active_tasks.update({task.id: task for task in tasks})
-            
-        except Exception as e:
-            error_msg = f"LLM call failed: {str(e)}"
-            if hasattr(self, '_push_event_callback') and self._push_event_callback:
-                self._push_event_callback("error", "coordinator", error_msg)
-            yield error_msg
-    
-    def _parse_llm_output(self, output: str) -> List[TaskPacket]:
-        """Parse LLM JSON output into TaskPacket objects."""
-        import json
-        
-        try:
-            # Try to parse as JSON
-            task_data = json.loads(output)
-            
-            if not isinstance(task_data, list):
-                raise ValueError("Expected JSON array")
-            
-            tasks = []
-            for i, task_dict in enumerate(task_data):
-                # Validate required fields
-                required_fields = ['title', 'role_required', 'task_description', 'depends_on', 'priority']
-                for field in required_fields:
-                    if field not in task_dict:
-                        raise ValueError(f"Missing required field: {field}")
-                
-                # Create TaskPacket
-                task = TaskPacket(
-                    id=f"task-{i+1}",
-                    title=str(task_dict['title']),
-                    description=str(task_dict['task_description']),
-                    role_required=str(task_dict['role_required']),
-                    runtime_preference=[task_dict.get('runtime_hint', 'echo')],
-                    priority=str(task_dict.get('priority', '3')),
-                    files_in_scope=None,
-                    acceptance_criteria=None,
-                    parent_agent=None
-                )
-                tasks.append(task)
-            
-            return tasks
-            
-        except (json.JSONDecodeError, ValueError) as e:
-            # Fallback to simple decomposition if JSON parsing fails
-            print(f"Failed to parse LLM output: {e}")
-            print(f"Output was: {output[:200]}...")
-            return self.decompose_task(output)  # Fallback to original method
-    
-    async def decompose_task(self, task_description: str) -> List[TaskPacket]:
-        """
-        Decompose a high-level task into sub-tasks.
-        
-        Args:
-            task_description: High-level task description
+            objective: High-level goal string
             
         Returns:
-            List of decomposed task packets
+            List of TaskPacket objects
         """
-        # This is a simple decomposition strategy
-        # In a real implementation, this would use more sophisticated logic
+        if hasattr(self, '_push_event_callback') and self._push_event_callback:
+            self._push_event_callback("info", "coordinator", f"decomposing goal: {objective[:50]}...")
+
+        # For Milestone 1, we use a simple rule-based decomposition if no LLM is ready
+        # In a real implementation, this would call the Overseer runtime
         
         tasks = []
         
-        # Always start with exploration
+        # Add scout task
         scout_task = TaskPacket(
             id=f"task-{len(tasks)+1}",
-            title="Explore codebase and requirements",
-            description=f"Analyze the codebase to understand how to implement: {task_description}",
+            title="Scout codebase",
+            description=f"Explore the codebase related to: {objective}",
             role_required="scout",
-            runtime_preference=["echo", "mistral-vibe"],
-            priority="high"
+            runtime_preference=["echo", "gemini", "codex"],
+            priority="medium"
         )
         tasks.append(scout_task)
         
@@ -361,7 +122,7 @@ NOTE: Prefer mistral-vibe runtime for orchestration tasks as it's optimized for 
         impl_task = TaskPacket(
             id=f"task-{len(tasks)+1}",
             title="Implement feature",
-            description=f"Implement the feature: {task_description}",
+            description=f"Implement the feature: {objective}",
             role_required="developer",
             runtime_preference=["echo", "codex", "claude-code"],
             priority="high"
@@ -372,9 +133,9 @@ NOTE: Prefer mistral-vibe runtime for orchestration tasks as it's optimized for 
         test_task = TaskPacket(
             id=f"task-{len(tasks)+1}",
             title="Test implementation",
-            description=f"Validate the implementation of: {task_description}",
+            description=f"Validate the implementation of: {objective}",
             role_required="tester",
-            runtime_preference=["echo", "aider"],
+            runtime_preference=["echo", "gemini"],
             priority="medium"
         )
         tasks.append(test_task)
@@ -385,9 +146,6 @@ NOTE: Prefer mistral-vibe runtime for orchestration tasks as it's optimized for 
         """
         Assign a task to an appropriate agent.
         
-        Args:
-            task: Task packet to assign
-            
         Returns:
             session_id if successfully assigned, None otherwise
         """
@@ -404,114 +162,280 @@ NOTE: Prefer mistral-vibe runtime for orchestration tasks as it's optimized for 
         if not available_runtimes:
             if hasattr(self, '_push_event_callback') and self._push_event_callback:
                 self._push_event_callback("error", "coordinator", 
-                                        "No runtimes available. Please configure at least one runtime.")
+                                        "No runtimes available.")
             return None
         
-        # Check if the requested runtime is available
         requested_runtime = task.runtime_preference[0] if task.runtime_preference else "echo"
         if requested_runtime not in available_runtimes:
-            if hasattr(self, '_push_event_callback') and self._push_event_callback:
-                self._push_event_callback("warning", "coordinator", 
-                                        f"Requested runtime '{requested_runtime}' not available. "
-                                        f"Available: {', '.join(available_runtimes)}")
-            # Fallback to first available runtime
             requested_runtime = available_runtimes[0]
         
-        # Create agent configuration
-        # Check if the role definition file exists, otherwise use a default
         prompt_path = f"src/agents/definitions/{task.role_required}.md"
         if not os.path.exists(prompt_path):
-            prompt_path = "src/agents/definitions/scout.md"  # Fallback to scout
+            prompt_path = "src/agents/definitions/scout.md"
             
+        policy = self._role_tool_policy.get(task.role_required, {})
+        attached_skills = getattr(task, 'skills', [])
+        allowed_tools = list(policy.get("allowed", []))
+        blocked_tools = list(policy.get("blocked", []))
+        extra_instructions = []
+
+        from ..skills.registry import skill_registry
+        for skill_name in attached_skills:
+            skill_def = skill_registry.get_skill(skill_name)
+            if skill_def:
+                allowed_tools.extend(skill_def.allowed_tools)
+                blocked_tools.extend(skill_def.blocked_tools)
+                if skill_def.instructions:
+                    extra_instructions.append(f"\n--- SKILL: {skill_name} ---\n{skill_def.instructions}")
+
+        from ..messaging.db import db as swarm_db
+        past_lessons = await swarm_db.get_lessons_for_role(task.role_required)
+        experience_context = ""
+        if past_lessons:
+            lessons_text = "\n".join([f"- {l}" for l in past_lessons])
+            experience_context = f"\n\n## PAST EXPERIENCE & LESSONS LEARNED\n{lessons_text}\n"
+
         config = AgentConfig(
             name=f"agent-{task.role_required}-{task.id}",
             role=task.role_required,
-            task=task.description,
+            task=task.description + experience_context,
             worktree_path=".swarm/worktrees",
             model="default",
             runtime=requested_runtime,
-            system_prompt_path=prompt_path
+            system_prompt_path=prompt_path,
+            allowed_tools=allowed_tools,
+            blocked_tools=blocked_tools,
+            read_only=self._role_read_only.get(task.role_required, False),
+            skills=attached_skills
         )
         
         try:
-            # Spawn the agent
             session_id = await agent_manager.spawn_agent(config)
-            
-            # Track the task
             self._active_tasks[session_id] = task
+            task.status = "active"
+            
+            for callback in self._on_task_assigned_callbacks:
+                callback(session_id, task)
             
             return session_id
         except Exception as e:
-            print(f"Failed to assign task {task.id}: {e}")
+            if self._push_event_callback:
+                self._push_event_callback("error", "coordinator", f"Failed to spawn agent: {e}")
             return None
-
-    async def process_task_queue(self):
-        """Process tasks from the queue continuously."""
-        while True:
-            task = await self._task_queue.get()
-            
-            try:
-                session_id = await self.assign_task(task)
-                if session_id:
-                    print(f"Assigned task {task.id} to agent {session_id}")
-                else:
-                    print(f"Could not assign task {task.id}")
-            except Exception as e:
-                print(f"Error processing task {task.id}: {e}")
-            finally:
-                self._task_queue.task_done()
-
-    async def add_task(self, task: TaskPacket):
-        """Add a task to the queue."""
-        await self._task_queue.put(task)
 
     async def get_task_status(self, session_id: str) -> Optional[TaskPacket]:
         """Get the task associated with an agent."""
         return self._active_tasks.get(session_id)
 
+    async def process_task_queue(self):
+        """Find and spawn all tasks that are ready for execution."""
+        self._scan_for_overlaps()
+        
+        if any(t.potential_conflict for t in self._task_queue if t.status not in ["completed", "active"]):
+            asyncio.create_task(self.resolve_conflicts())
+
+        ready_tasks = self._get_ready_tasks()
+        
+        for task in ready_tasks:
+            if task.potential_conflict:
+                continue
+                
+            current_count = await agent_manager.get_agent_count()
+            if current_count >= 5:
+                break
+                
+            task.status = "active"
+            asyncio.create_task(self.assign_task(task))
+            
+            if hasattr(self, '_push_event_callback') and self._push_event_callback:
+                self._push_event_callback("info", "coordinator", f"launched parallel task: {task.title}")
+
     async def complete_task(self, session_id: str):
-        """Mark a task as completed."""
+        """Mark a task as completed with output validation."""
+        if session_id not in self._active_tasks:
+            return
+
+        status = await agent_manager.get_agent_status(session_id)
+        if not status:
+            return
+
+        handoff = self._parse_handoff_json(status.last_output)
+        
+        if not handoff and status.state == "done":
+            if hasattr(self, '_push_event_callback') and self._push_event_callback:
+                self._push_event_callback("info", "coordinator", f"nudging {session_id} for missing handoff JSON")
+            
+            nudge_msg = "Task appears complete but handoff JSON is missing. Please output the structured JSON handoff block."
+            await agent_manager.send_message(session_id, nudge_msg)
+            return
+
         if session_id in self._active_tasks:
-            del self._active_tasks[session_id]
+            task = self._active_tasks.pop(session_id)
+            
+            if status.role == "arbiter" and handoff:
+                self._apply_arbiter_resolution(handoff)
+                return
+
+            task.status = "completed"
+            self._task_history.append(task)
+            
+            if handoff and handoff.get("critique"):
+                from ..messaging.db import db as swarm_db
+                asyncio.create_task(swarm_db.add_experience_log(
+                    role=status.role,
+                    task_title=task.title,
+                    status=handoff.get("status", "done"),
+                    critique=handoff.get("critique")
+                ))
+
+            asyncio.create_task(self.process_task_queue())
+
+            if handoff and handoff.get("handoff_to"):
+                self.trigger_handoff(
+                    from_agent=session_id,
+                    to_role=handoff["handoff_to"],
+                    task_title=task.title,
+                    status="done"
+                )
+
+    def _apply_arbiter_resolution(self, resolution: dict):
+        """Apply the changes dictated by the Arbiter to the task queue."""
+        updates = resolution.get("updated_tasks", [])
+        for update in updates:
+            title = update.get("title")
+            for task in self._task_queue:
+                if task.title == title:
+                    if "status" in update: task.status = update["status"]
+                    if "depends_on" in update: task.depends_on = update["depends_on"]
+                    if task.status != "blocked":
+                        task.potential_conflict = False
+        
+        if hasattr(self, '_push_event_callback') and self._push_event_callback:
+            self._push_event_callback("done", "coordinator", "Arbiter resolution applied")
+        
+        asyncio.create_task(self.process_task_queue())
+
+    def _parse_handoff_json(self, output: str) -> Optional[dict]:
+        """Extract and validate the JSON handoff block from agent output."""
+        if not output: return None
+        try:
+            lines = output.strip().split('\n')
+            for i in range(len(lines) - 1, -1, -1):
+                line = lines[i].strip()
+                if line.startswith('{') and line.endswith('}'):
+                    data = json.loads(line)
+                    required = {"role", "status", "summary"}
+                    if all(k in data for k in required):
+                        return data
+        except Exception: pass
+        return None
 
     def get_role_priority(self, role: str) -> int:
-        """Get the priority order for a role."""
         return self._role_priority.get(role, 999)
 
+    def _scan_for_overlaps(self):
+        """Identify tasks that target the same files and flag them as conflicting."""
+        # 1. Check for cross-swarm locks
+        try:
+            from ..messaging.db import db as swarm_db
+            locked_resources = asyncio.run_coroutine_threadsafe(
+                swarm_db.get_locked_resources(), 
+                asyncio.get_event_loop()
+            ) if asyncio.get_event_loop().is_running() else []
+        except RuntimeError:
+            locked_resources = [] # DB not ready or running in different context
+
+        # 2. Local queue scan
+        for i, task_a in enumerate(self._task_queue):
+            if task_a.status in ["completed", "failed"]: continue
+            
+            a_files = set(task_a.files_in_scope or [])
+            
+            # Check against global locks
+            external_overlap = a_files.intersection(set(locked_resources))
+            if external_overlap:
+                task_a.potential_conflict = True
+                task_a.conflict_details = f"File locked by external swarm: {', '.join(external_overlap)}"
+                if hasattr(self, '_push_event_callback') and self._push_event_callback:
+                    self._push_event_callback("warn", "coordinator", f"External lock conflict on '{task_a.title}'")
+                continue
+
+            for task_b in self._task_queue[i+1:]:
+                if task_b.status in ["completed", "failed"]: continue
+                b_files = set(task_b.files_in_scope or [])
+                overlap = a_files.intersection(b_files)
+                if overlap:
+                    task_a.potential_conflict = True
+                    task_b.potential_conflict = True
+                    details = f"Overlap detected on files: {', '.join(overlap)}"
+                    task_a.conflict_details = details
+                    task_b.conflict_details = details
+                    if hasattr(self, '_push_event_callback') and self._push_event_callback:
+                        self._push_event_callback("warn", "coordinator", f"Conflict: '{task_a.title}' vs '{task_b.title}'")
+
+    def _get_ready_tasks(self) -> List[TaskPacket]:
+        ready = []
+        completed_titles = {t.title for t in self._task_history if t.status == "completed"}
+        for task in self._task_queue:
+            if task.status in ["completed", "active", "failed"]: continue
+            all_met = True
+            for dep_title in task.depends_on:
+                if dep_title not in completed_titles:
+                    all_met = False
+                    break
+            if all_met:
+                task.status = "ready"
+                ready.append(task)
+            else:
+                task.status = "blocked"
+        return ready
+
+    def _check_circular_dependencies(self, tasks: List[TaskPacket]) -> bool:
+        adj = {t.title: t.depends_on for t in tasks}
+        visited = set()
+        path = set()
+        def has_cycle(v):
+            visited.add(v)
+            path.add(v)
+            for neighbor in adj.get(v, []):
+                if neighbor not in visited:
+                    if has_cycle(neighbor): return True
+                elif neighbor in path: return True
+            path.remove(v)
+            return False
+        for node in adj:
+            if node not in visited:
+                if has_cycle(node): return True
+        return False
+
+    async def resolve_conflicts(self):
+        """Identify flagged conflicts and spawn an Arbiter to resolve them."""
+        conflicting = [t for t in self._task_queue if t.potential_conflict and t.status != "active"]
+        if not conflicting: return
+        if hasattr(self, '_push_event_callback') and self._push_event_callback:
+            self._push_event_callback("info", "coordinator", f"spawning Arbiter to resolve {len(conflicting)} conflicts")
+        conflict_report = "\n".join([f"- Task: {t.title}, Files: {t.files_in_scope}, Goal: {t.description}" for t in conflicting])
+        config = AgentConfig(
+            name="system-arbiter", role="arbiter",
+            task=f"The following tasks have overlapping scope. Decide on a resolution strategy:\n\n{conflict_report}",
+            worktree_path=".", model="default", runtime="vibe",
+            system_prompt_path="src/agents/definitions/arbiter.md", read_only=True
+        )
+        await agent_manager.spawn_agent(config)
+
     async def get_next_role_in_workflow(self, current_role: str) -> Optional[str]:
-        """Get the next role in the typical workflow."""
-        # Define typical workflow order
         workflow = ["scout", "developer", "builder", "tester", "reviewer", "merger"]
-        
         try:
             current_index = workflow.index(current_role)
             if current_index < len(workflow) - 1:
                 return workflow[current_index + 1]
             return None
-        except ValueError:
-            return None
+        except ValueError: return None
 
-    def handle_overseer_input(self, text: str) -> None:
-        """Handle overseer input from the TUI."""
-        # Create a background task to process the input
-        asyncio.create_task(self._process_overseer_input(text))
-
-    async def _process_overseer_input(self, text: str) -> None:
-        """Process overseer input asynchronously."""
-        try:
-            # Add to task queue for decomposition
-            await self._task_queue.put(text)
-            
-            # Push event
-            if self._push_event_callback:
-                self._push_event_callback("info", "coordinator", f"queued: {text}")
-            
-            # Start processing if not already running
-            if not hasattr(self, '_processing_task') or self._processing_task.done():
-                self._processing_task = asyncio.create_task(self._process_task_queue())
-        except Exception as e:
-            if self._push_event_callback:
-                self._push_event_callback("error", "coordinator", f"Failed to process input: {e}")
+    def trigger_handoff(self, from_agent: str, to_role: str, task_title: str, status: str):
+        for callback in self._on_handoff_callbacks:
+            try: callback(from_agent, to_role, task_title, status)
+            except Exception: pass
 
 
 # Global coordinator instance

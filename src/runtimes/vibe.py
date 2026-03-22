@@ -357,6 +357,11 @@ class VibeRuntime(AgentRuntime):
         Config-level allowed_tools override role defaults.
         """
         tools = config.allowed_tools or self.ROLE_TOOL_POLICY.get(config.role, [])
+        
+        # If read_only is set, further restrict tools
+        if config.read_only:
+            read_only_tools = {"read_file", "list_directory", "search_files"}
+            tools = [t for t in tools if t in read_only_tools] or list(read_only_tools)
 
         if not tools:
             return []  # all tools remain available

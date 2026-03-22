@@ -1,0 +1,7 @@
+description: "SQL query optimization and database interaction expertise."
+version: "1.0.0"
+may:
+  - run_shell_command
+metadata:
+  category: "data"
+  required_binaries: ["sqlite3"]

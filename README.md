@@ -1,118 +1,115 @@
-# Swarm
+# Swarm  ◈  Multi-Agent Orchestration System
 
-**Provider-agnostic multi-agent orchestration TUI for coding agents**
+**Provider-agnostic multi-agent orchestration TUI for coding agents.**
 
-## Overview
+Swarm provides a centralized interface to coordinate multiple specialized AI agents (workers) using various runtimes (Claude Code, Gemini CLI, Mistral Vibe, etc.) under the guidance of a top-level Overseer.
 
-Swarm is a terminal-first multi-agent orchestration system that supports popular coding-agent CLIs including Claude Code, Codex CLI, Gemini CLI, Aider, OpenHands CLI, OpenCode, Goose, Cline CLI, Qodo Gen CLI, Mistral Vibe, Hermes-based local agents, and OpenClaw.
+---
 
-## Features
+## 🚀 Quick Start
 
-- **Overseer + Worker Fleet Interface**: Visible coordination between overseer and worker agents
-- **Role-Stable Agents**: Agents stay within their assigned roles with strict contracts
-- **Provider/Runtime Portability**: Support for cloud and local models
-- **Extensible Architecture**: Easy to add new agent runtimes
-- **Interactive & Headless Modes**: Support for both terminal agents and CI/task agents
-
-## Installation
-
+### 1. Installation
 ```bash
-# Using pip (when published)
-pip install swarm
-
-# From source
+git clone https://github.com/canonrebel04/swarm.git
+cd swarm
 poetry install
 ```
 
-## Quick Start
-
+### 2. Initialization & Setup
 ```bash
-# Initialize a new swarm
-swarm init
+# Initialize project directories and database
+poetry run swarm init
 
-# Run the swarm
-swarm run
-
-# Check status
-swarm status
+# Configure your LLM providers and model selection
+poetry run swarm setup
 ```
 
-## Architecture
+### 3. Launch TUI
+```bash
+poetry run swarm tui
+```
+
+---
+
+## 🏗 Architecture
+
+Swarm is built as a hierarchical orchestration system:
+
+1.  **User**: Provides the high-level objective via the TUI.
+2.  **Overseer**: An LLM-backed central brain that decomposes the objective into tasks.
+3.  **Coordinator**: Internal logic managing agent lifecycles, worktrees, and data flow.
+4.  **Agent Fleet**: Specialized worker agents bound by specific roles.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
-│                        Swarm TUI                          │
-├──────────────────────────────────┬─────────────────────────────────────┤
-│        OVERSEER CHAT         │          AGENT FLEET                │
-│  [User] build feature X      │  lead-1       running   claude      │
-│  [Overseer] spawning lead    │  builder-1    running   aider       │
-│  [Overseer] scout first      │  tester-1     queued    gemini      │
-│  [Overseer] nudging builder  │  reviewer-1   stalled   codex       │
-│                              │  merger-1     waiting   opencode    │
-├──────────────────────────────────┴─────────────────────────────────────┤
+│                             Swarm TUI                              │
+├──────────────────────────────────┬─────────────────────────────────┤
+│        OVERSEER CHAT             │          AGENT FLEET            │
+│  [User] build feature X          │  lead-1      running   claude   │
+│  [Overseer] spawning lead        │  builder-1   running   vibe     │
+│  [Overseer] scout first          │  tester-1    queued    gemini   │
+│  [Overseer] nudging builder      │  reviewer-1  stalled   codex    │
+│                                  │  merger-1    waiting   opencode │
+├──────────────────────────────────┴─────────────────────────────────┤
 │                  SELECTED AGENT OUTPUT / EVENTS                    │
-│  builder-1: reading files...                                       │
-│  builder-1: edited auth.py                                         │
-│  builder-1: ready for tests                                        │
+│  [builder-1] Running pytest...                                     │
+│  [builder-1] Fix applied to src/auth.py                            │
+│  [System] builder-1 reached 80% cost cap. Nudging...               │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## Supported Runtimes
+---
 
-### Tier 1 (Full Support)
-- Claude Code
-- Codex CLI
-- Gemini CLI
-- Aider
-- OpenHands CLI
-- OpenCode
-- Mistral Vibe
-- Hermes (local models)
+## 🤖 Agent Roles & Contracts
 
-### Tier 2 (High Value)
-- Goose
-- Cline CLI
-- Qodo Gen CLI
-- OpenClaw
+Swarm enforces strict **Role Locking** to prevent agent drift. Each agent is bound by a YAML contract and a Markdown definition.
 
-## Agent Roles
+| Role | Mission | Allowed Actions |
+| :--- | :--- | :--- |
+| **Scout** | Exploration & Fact-finding | Read files, Grep, Search |
+| **Developer** | Complex Implementation | Edit code, Plan, Test |
+| **Builder** | Scoped execution | Write files, Build, Fix |
+| **Tester** | Validation & QA | Run tests, Document bugs |
+| **Reviewer** | Quality Audit | Audit changes, Feedback |
+| **Merger** | Integration | Resolve conflicts, Merge |
+| **Monitor** | Fleet Observability | Track health, Detect drift |
 
-- **Orchestrator**: Multi-project coordinator
-- **Coordinator**: Task decomposition and assignment
-- **Supervisor**: Fleet oversight and intervention
-- **Lead**: Team-level coordination
-- **Scout**: Code exploration and fact gathering
-- **Developer**: Complex implementation
-- **Builder**: Fast execution tasks
-- **Tester**: Validation and testing
-- **Reviewer**: Code review
-- **Merger**: Branch merging
-- **Monitor**: Health monitoring
+---
 
-## Configuration
+## 🔌 Supported Runtimes
 
-Edit `config.yaml` to configure:
-- Overseer settings
-- Agent limits and timeouts
-- Role definitions and contracts
-- Runtime capabilities
-- Messaging and worktree settings
+Swarm communicates with a variety of agent CLIs through standardized adapters:
 
-## Development
+- **Claude Code**: Multi-turn reasoning and complex implementation.
+- **Mistral Vibe**: Fast execution and task-first implementation.
+- **Gemini CLI**: Deep analysis and large-context exploration.
+- **Codex CLI**: OpenAI-powered task execution.
+- **OpenCode**: SSE-based interactive coding server.
+- **Hermes**: Local model support via Ollama/OpenAI-compat APIs.
+- **Goose / Cline / Qodo**: Extended task-first agents.
 
-```bash
-# Install dependencies
-poetry install
+---
 
-# Run tests
-poetry run pytest
+## 🛡 Safety & Isolation
 
-# Run linting
-poetry run black .
-poetry run isort .
-poetry run mypy .
-```
+- **Worktree Isolation**: Every active agent operates in its own `git worktree` to prevent file conflicts.
+- **Tool Policy Enforcement**: Permissions are enforced at the runtime level (e.g., Scouts are spawned in `--read-only` mode).
+- **Anti-Drift Monitor**: Real-time inspection of agent output to detect and alert on role violations.
+- **Structured Handoffs**: Tasks are only completed when a valid JSON handoff block is produced and validated.
 
-## License
+---
+
+## 🛠 CLI Reference
+
+- `swarm init`: Initialize a new swarm project.
+- `swarm setup`: Interactive model and provider configuration.
+- `swarm tui`: Launch the main coordination interface.
+- `swarm doctor`: Run diagnostic checks on your environment.
+- `swarm logs`: View recent system events and agent activity.
+- `swarm cleanup`: Remove active worktrees and temporary files.
+
+---
+
+## ⚖ License
 
 MIT

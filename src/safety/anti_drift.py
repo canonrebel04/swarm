@@ -6,8 +6,10 @@ such as file modifications by read-only roles or forbidden tool usage.
 """
 
 import re
+import asyncio
 from typing import Callable, List, Optional
 from dataclasses import dataclass
+from ..messaging.event_bus import event_bus
 
 
 @dataclass
@@ -49,13 +51,14 @@ class AntiDriftMonitor:
         """Set the event callback for emitting warnings."""
         self._event_callback = callback
     
-    def monitor_output(self, last_output: str, agent_role: str) -> List[DriftViolation]:
+    async def monitor_output(self, last_output: str, agent_role: str, session_id: Optional[str] = None) -> List[DriftViolation]:
         """
         Monitor agent output for role constraint violations.
         
         Args:
             last_output: The agent's output to analyze
             agent_role: The role of the agent producing the output
+            session_id: Optional session ID for event correlation
             
         Returns:
             List of detected violations (empty if none found)
@@ -83,7 +86,20 @@ class AntiDriftMonitor:
                     )
                     violations.append(violation)
                     
-                    # Emit warning event
+                    # Emit warning via EventBus
+                    await event_bus.emit(
+                        event_type="drift",
+                        source="anti-drift-monitor",
+                        data={
+                            "violation": violation.violation_type,
+                            "tool": violation.tool_line,
+                            "message": violation.message,
+                            "severity": "high"
+                        },
+                        session_id=session_id
+                    )
+                    
+                    # Also trigger legacy callback if present
                     if self._event_callback:
                         self._event_callback(
                             "warn", agent_role, 

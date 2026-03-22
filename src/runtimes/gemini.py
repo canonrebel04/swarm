@@ -109,7 +109,7 @@ class GeminiRuntime(AgentRuntime):
     # ── Spawn ──────────────────────────────────────────────────────────────────
 
     async def spawn(self, config: AgentConfig) -> str:
-        approval  = self.ROLE_APPROVAL.get(config.role, "auto_edit")
+        approval  = "plan" if config.read_only else self.ROLE_APPROVAL.get(config.role, "auto_edit")
         model     = config.model or self.ROLE_MODEL.get(config.role, "gemini-2.5-flash")
         policy_path = self._write_policy_file(config)
         full_prompt = self._build_full_prompt(config)

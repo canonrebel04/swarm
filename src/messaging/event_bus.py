@@ -28,6 +28,7 @@ class Event:
     timestamp: float
     session_id: Optional[str] = None
     agent_name: Optional[str] = None
+    target_swarm: Optional[str] = None
 
 
 class EventBus:
@@ -51,7 +52,8 @@ class EventBus:
         source: str, 
         data: dict, 
         session_id: Optional[str] = None, 
-        agent_name: Optional[str] = None
+        agent_name: Optional[str] = None,
+        target_swarm: Optional[str] = None
     ) -> None:
         """
         Emit an event that will be persisted and sent to subscribers.
@@ -62,6 +64,7 @@ class EventBus:
             data: Event data payload
             session_id: Optional session ID for correlation
             agent_name: Optional agent name for correlation
+            target_swarm: Optional target swarm ID for cross-swarm events
         """
         event = Event(
             event_id=str(uuid.uuid4()),
@@ -70,7 +73,8 @@ class EventBus:
             data=data,
             timestamp=time.time(),
             session_id=session_id,
-            agent_name=agent_name
+            agent_name=agent_name,
+            target_swarm=target_swarm
         )
         
         # Persist event to database
@@ -86,7 +90,8 @@ class EventBus:
             **event.data,
             "_event_id": event.event_id,
             "_source": event.source,
-            "_timestamp": event.timestamp
+            "_timestamp": event.timestamp,
+            "_target_swarm": event.target_swarm
         })
         
         await self.db.add_event(

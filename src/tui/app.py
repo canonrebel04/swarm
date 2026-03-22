@@ -28,6 +28,7 @@ class SwarmApp(App):
         Binding("ctrl+r",       "retry_selected",  "Retry",        show=True),
         Binding("ctrl+n",       "new_chat",         "New Chat",     show=True),
         Binding("f2",       "model_selector",  "Model",        show=True),
+        Binding("ctrl+s",       "skill_browser",   "Skills",       show=True),
         Binding("ctrl+i",       "inspect_role",    "Role",         show=True),
         Binding("tab",          "focus_next",      "Next",         show=True),
         Binding("shift+tab",    "focus_previous",  "Prev",         show=False),
@@ -135,6 +136,12 @@ class SwarmApp(App):
         # Store coordinator reference for chat panel access
         self.coordinator = coordinator
         
+        # Link coordinator to TaskGraph panel
+        if hasattr(self, '_current_screen') and hasattr(self._current_screen, 'query'):
+            graph_panel = self._current_screen.query_one("#task-graph", None)
+            if graph_panel:
+                graph_panel.coordinator = coordinator
+        
         # Push startup event
         role_count = len(self.runtime_registry.list_roles())
         runtime_count = len(self.runtime_registry.list_runtimes())
@@ -211,8 +218,13 @@ class SwarmApp(App):
         chat.query_one("#chat-scroll").remove_children()
         self.notify("Chat session cleared", severity="information")
     
+    def action_skill_browser(self) -> None:
+        """Open the skill browser modal."""
+        from src.tui.screens.skills import SkillBrowserModal
+        self.push_screen(SkillBrowserModal())
+
     async def action_inspect_role(self) -> None:
-        """Inspect the selected agent's role contract."""
+        """Inspect the selected agent's role contract and identity."""
         if not self.selected_agent:
             return
         
@@ -226,17 +238,26 @@ class SwarmApp(App):
                     break
             
             if agent_role:
-                # Load the role contract
-                contract_path = f"src/agents/definitions/{agent_role}.md"
-                try:
-                    with open(contract_path, 'r') as f:
-                        contract_md = f.read()
-                    
-                    # Show inspect modal
-                    self.push_screen(InspectModal(self.selected_agent, agent_role, contract_md))
-                except FileNotFoundError:
-                    error_md = f"# No contract found for role: {agent_role}\n\nThe role definition file `{contract_path}` does not exist."
-                    self.push_screen(InspectModal(self.selected_agent, agent_role, error_md))
+                # Load the role contract (YAML)
+                yaml_path = f"src/roles/contracts/{agent_role}.yaml"
+                yaml_content = ""
+                if os.path.exists(yaml_path):
+                    with open(yaml_path, 'r') as f:
+                        yaml_content = f.read()
+                else:
+                    yaml_content = f"# No YAML contract found at {yaml_path}"
+
+                # Load the role identity (MD)
+                md_path = f"src/agents/definitions/{agent_role}.md"
+                md_content = ""
+                if os.path.exists(md_path):
+                    with open(md_path, 'r') as f:
+                        md_content = f.read()
+                else:
+                    md_content = f"# No Markdown definition found at {md_path}"
+                
+                # Show enhanced inspect modal
+                self.push_screen(InspectModal(self.selected_agent, agent_role, yaml_content, md_content))
         except Exception as e:
             self.push_swarm_event("error", "system", f"Failed to inspect role: {e}")
 

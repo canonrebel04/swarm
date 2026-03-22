@@ -17,17 +17,20 @@ import yaml
 import shutil
 import os
 
+from ..state import swarm_state
+from ...utils.mistral import fetch_mistral_models, FALLBACK_MODELS as MISTRAL_FALLBACK
+from ...utils.openai import fetch_openai_models, FALLBACK_MODELS as OPENAI_FALLBACK
+from ...utils.ollama import fetch_ollama_models, FALLBACK_MODELS as OLLAMA_FALLBACK
+
 PROVIDER_OPTIONS = [
     ("claude-code", "claude-opus-4-5",       "Anthropic",  "claude-opus-4-5        — best quality"),
     ("claude-code", "claude-sonnet-4-5",     "Anthropic",  "claude-sonnet-4-5      — fast + capable"),
     ("claude-code", "claude-haiku-3-5",      "Anthropic",  "claude-haiku-3-5       — cheapest"),
-    ("codex",       "o3",                    "OpenAI",     "o3                     — best reasoning"),
-    ("codex",       "o4-mini",               "OpenAI",     "o4-mini                — fast reasoning"),
+    ("codex",       "__dynamic__",           "OpenAI",     "openai-api             — dynamic models"),
     ("gemini",      "gemini-2.5-pro",        "Google",     "gemini-2.5-pro         — deep analysis"),
     ("gemini",      "gemini-2.5-flash",      "Google",     "gemini-2.5-flash       — fast"),
-    ("vibe",        "mistral-large-latest",  "Mistral",    "mistral-large-latest   — default"),
-    ("vibe",        "codestral-latest",      "Mistral",    "codestral-latest       — code-focused"),
-    ("hermes",      "hermes",                "Nous",       "hermes                 — local/any"),
+    ("vibe",        "__dynamic__",           "Mistral",    "mistral-api            — dynamic models"),
+    ("hermes",      "__dynamic__",           "Ollama",     "ollama-api             — local models"),
 ]
 
 CONFIG_PATH = Path("config.yaml")
@@ -176,6 +179,10 @@ class ModelSelectorModal(ModalScreen):
         self._custom_mode = False
         self._selected_rt = self._cfg.get("overseer", {}).get("runtime", "vibe")
         self._selected_model = self._cfg.get("overseer", {}).get("model", "mistral-large-latest")
+        self._mistral_models: list[str] = []
+        self._openai_models: list[str] = []
+        self._ollama_models: list[str] = []
+        
         # Pre-compute statuses
         self._statuses = {
             rt: _runtime_status(rt, binary, env_var)
@@ -244,14 +251,47 @@ class ModelSelectorModal(ModalScreen):
 
     def _make_model_items(self, runtime_key: str) -> list[ListItem]:
         items = []
+        
+        if runtime_key == "vibe":
+            models = self._mistral_models or MISTRAL_FALLBACK
+            for m in models:
+                label = f"{m:<40} — mistral api"
+                if m == "mistral-large-latest":
+                    label = f"{m:<40} — default"
+                item = ListItem(Static(f"  {label}"))
+                item.data = m
+                items.append(item)
+            return items
+
+        if runtime_key == "codex":
+            models = self._openai_models or OPENAI_FALLBACK
+            for m in models:
+                label = f"{m:<40} — openai api"
+                item = ListItem(Static(f"  {label}"))
+                item.data = m
+                items.append(item)
+            return items
+
+        if runtime_key == "hermes":
+            models = self._ollama_models or OLLAMA_FALLBACK
+            for m in models:
+                label = f"{m:<40} — local ollama"
+                item = ListItem(Static(f"  {label}"))
+                item.data = m
+                items.append(item)
+            return items
+
         for runtime, model, provider, label in PROVIDER_OPTIONS:
-            if runtime == runtime_key:
+            if runtime == runtime_key and model != "__dynamic__":
                 item = ListItem(Static(f"  {label}"))
                 item.data = model
                 items.append(item)
         return items
 
     def on_mount(self) -> None:
+        # Start fetching models in background
+        self.run_worker(self._fetch_all_dynamic_models())
+
         self._refresh_model_list(self._selected_rt)
         # Highlight the currently configured program
         pl = self.query_one("#program-list", ListView)
@@ -261,16 +301,36 @@ class ModelSelectorModal(ModalScreen):
                 break
         pl.focus()
 
+    async def _fetch_all_dynamic_models(self) -> None:
+        # Parallel fetch
+        results = await asyncio.gather(
+            fetch_mistral_models(),
+            fetch_openai_models(),
+            fetch_ollama_models(),
+            return_exceptions=True
+        )
+        
+        if not isinstance(results[0], Exception): self._mistral_models = results[0]
+        if not isinstance(results[1], Exception): self._openai_models = results[1]
+        if not isinstance(results[2], Exception): self._ollama_models = results[2]
+        
+        # Refresh if one of these is currently selected
+        if self._selected_rt in ("vibe", "codex", "hermes"):
+            self._refresh_model_list(self._selected_rt)
+
     def _refresh_model_list(self, runtime_key: str) -> None:
         ml = self.query_one("#model-list", ListView)
         ml.clear()
-        for item in self._make_model_items(runtime_key):
+        items = self._make_model_items(runtime_key)
+        for item in items:
             ml.append(item)
+        
         # Pre-highlight current model if it matches
-        for i, (runtime, model, _, _) in enumerate(PROVIDER_OPTIONS):
-            if runtime == runtime_key and model == self._selected_model:
+        for i, item in enumerate(items):
+            if hasattr(item, "data") and item.data == self._selected_model:
                 ml.index = i
                 return
+        
         if ml._nodes:
             ml.index = 0
 
