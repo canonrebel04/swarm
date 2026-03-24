@@ -62,9 +62,18 @@ roles:
 
 
 @app.command()
-def doctor():
+def doctor(
+    verify: bool = typer.Option(False, "--verify", help="Run connectivity verification for all runtimes")
+):
     """Run diagnostic checks on your Swarm environment."""
     rprint("[bold cyan]Running Swarm Diagnostic Checks...[/bold cyan]\n")
+    
+    if verify:
+        # Run runtime verification
+        from .runtime_verify import verify_and_print
+        rprint("[bold]Runtime Verification[/bold]")
+        asyncio.run(verify_and_print())
+        return
     
     # 1. Check Core Dependencies
     table = Table(title="System Status")
