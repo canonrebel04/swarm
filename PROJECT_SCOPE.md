@@ -248,11 +248,11 @@ To prevent "agent drift" (where an agent starts performing tasks outside its sco
 ### Phase 4 — Role Safety
 - [x] Role locking mechanism
 - [x] Anti-drift detection system
-- [ ] Tool policy enforcement
-- [ ] Filesystem access controls
-- [ ] Structured output validation
-- [ ] Supervisor intervention workflow
-- [ ] Drift detection alerts
+- [x] Tool policy enforcement (src/safety/enforcer.py)
+- [x] Filesystem access controls (src/safety/fs_guard.py)
+- [x] Structured output validation (src/safety/output_validator.py)
+- [x] Supervisor intervention workflow (watchdog escalation)
+- [x] Drift detection alerts (anti-drift alert pipeline)
 
 ### Phase 5 — TUI
 - [x] Overseer chat panel
@@ -264,14 +264,19 @@ To prevent "agent drift" (where an agent starts performing tasks outside its sco
 - [x] Nudge / retry / kill actions
 
 ### Phase 6 — Extended Adapters
-- [ ] Goose adapter
-- [ ] Cline CLI adapter
-- [ ] Qodo Gen CLI adapter
-- [ ] OpenClaw experimental adapter
+- [x] Goose adapter (src/runtimes/goose.py)
+- [x] Cline CLI adapter (src/runtimes/cline.py)
+- [x] Qodo Gen CLI adapter (src/runtimes/qodo.py)
+- [x] OpenClaw experimental adapter (src/runtimes/openclaw.py)
+- [x] SSH remote runtime (src/runtimes/ssh.py)
+- [x] Docker remote runtime (src/runtimes/docker.py)
 
 ### Phase 7 — Polish
-- [ ] `swarm init`
-- [ ] `swarm doctor`
+- [x] `swarm init`
+- [x] `swarm doctor`
+- [x] `swarm setup`
+- [x] LLM-backed Overseer (src/orchestrator/overseer.py)
+- [x] Centralized role policies (src/roles/prompts.py)
 - [ ] Replay logs
 - [ ] Merge queue
 - [ ] README

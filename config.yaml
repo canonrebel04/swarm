@@ -1,3 +1,14 @@
 overseer:
   runtime: vibe
   model: mistral-large-latest
+  fallback: heuristic
+
+roles:
+  enabled:
+    - scout
+    - developer
+    - builder
+    - tester
+    - reviewer
+    - merger
+    - monitor

@@ -10,19 +10,21 @@ import time
 import json
 from ..runtimes.base import AgentConfig, AgentStatus
 from ..roles.registry import role_registry
+from ..roles.prompts import ROLE_TOOL_POLICY, ROLE_READ_ONLY
 from .agent_manager import agent_manager
 
 
 @dataclass
 class TaskPacket:
     """A task to be assigned to an agent."""
+
     id: str
     title: str
     description: str
     role_required: str
     runtime_preference: List[str]
     priority: str = "medium"
-    status: str = "pending" # pending, blocked, ready, active, completed, failed
+    status: str = "pending"  # pending, blocked, ready, active, completed, failed
     potential_conflict: bool = False
     conflict_details: str = ""
     files_in_scope: List[str] = field(default_factory=list)
@@ -41,38 +43,16 @@ class Coordinator:
         self._task_history: List[TaskPacket] = []
         self._push_event_callback = None
         self._role_priority = {
-            "scout": 1,      # First to explore
+            "scout": 1,  # First to explore
             "developer": 2,  # Complex implementation
-            "builder": 3,    # Straightforward tasks
-            "tester": 4,     # Validation
-            "reviewer": 5,   # Final review
-            "merger": 6      # Merge resolution
+            "builder": 3,  # Straightforward tasks
+            "tester": 4,  # Validation
+            "reviewer": 5,  # Final review
+            "merger": 6,  # Merge resolution
         }
-        self._role_tool_policy = {
-            "scout": {
-                "allowed": ["Read", "Bash(find:*)", "Bash(grep:*)", "Bash(cat:*)", "Bash(ls:*)"],
-                "blocked": ["Edit", "Write", "Bash(git:commit:*)", "Bash(git:push:*)"]
-            },
-            "reviewer": {
-                "allowed": ["Read", "Bash(git:diff:*)", "Bash(git:log:*)", "Bash(grep:*)"],
-                "blocked": ["Edit", "Write", "Bash(git:commit:*)"]
-            },
-            "monitor": {
-                "allowed": ["Read", "Bash(ps:*)", "Bash(ls:*)", "Bash(git:status:*)"],
-                "blocked": ["Edit", "Write"]
-            },
-            "coordinator": {
-                "allowed": ["Read", "Bash(ls:*)"],
-                "blocked": ["Edit", "Write"]
-            }
-        }
-        self._role_read_only = {
-            "scout": True,
-            "reviewer": True,
-            "monitor": True,
-            "coordinator": True,
-            "orchestrator": True
-        }
+        # Use centralized policies from src/roles/prompts.py
+        self._role_tool_policy = ROLE_TOOL_POLICY
+        self._role_read_only = ROLE_READ_ONLY
         self._on_task_assigned_callbacks = []
         self._on_handoff_callbacks = []
         self._merge_manager = None  # Will be initialized when coordinator is ready
@@ -92,108 +72,116 @@ class Coordinator:
     async def decompose_goal(self, objective: str) -> List[TaskPacket]:
         """
         Use the Overseer to decompose a high-level goal into tasks.
-        
+
+        Falls back to heuristic decomposition when no LLM is available.
+
         Args:
             objective: High-level goal string
-            
+
         Returns:
             List of TaskPacket objects
         """
-        if hasattr(self, '_push_event_callback') and self._push_event_callback:
-            self._push_event_callback("info", "coordinator", f"decomposing goal: {objective[:50]}...")
+        if hasattr(self, "_push_event_callback") and self._push_event_callback:
+            self._push_event_callback(
+                "info", "coordinator", f"decomposing goal: {objective[:50]}..."
+            )
 
-        # For Milestone 1, we use a simple rule-based decomposition if no LLM is ready
-        # In a real implementation, this would call the Overseer runtime
-        
-        tasks = []
-        
-        # Add scout task
-        scout_task = TaskPacket(
-            id=f"task-{len(tasks)+1}",
-            title="Scout codebase",
-            description=f"Explore the codebase related to: {objective}",
-            role_required="scout",
-            runtime_preference=["echo", "gemini", "codex"],
-            priority="medium"
-        )
-        tasks.append(scout_task)
-        
-        # Add implementation task
-        impl_task = TaskPacket(
-            id=f"task-{len(tasks)+1}",
-            title="Implement feature",
-            description=f"Implement the feature: {objective}",
-            role_required="developer",
-            runtime_preference=["echo", "codex", "claude-code"],
-            priority="high"
-        )
-        tasks.append(impl_task)
-        
-        # Add testing task
-        test_task = TaskPacket(
-            id=f"task-{len(tasks)+1}",
-            title="Test implementation",
-            description=f"Validate the implementation of: {objective}",
-            role_required="tester",
-            runtime_preference=["echo", "gemini"],
-            priority="medium"
-        )
-        tasks.append(test_task)
-        
+        from .overseer import create_overseer
+
+        overseer = create_overseer()
+
+        raw_tasks = await overseer.decompose(objective)
+
+        tasks: List[TaskPacket] = []
+        for i, t in enumerate(raw_tasks):
+            task = TaskPacket(
+                id=t.get("id", f"task-{i + 1}"),
+                title=t.get("title", f"Task {i + 1}"),
+                description=t.get("description", objective),
+                role_required=t.get("role", "developer"),
+                runtime_preference=[t.get("runtime", "echo")]
+                if t.get("runtime")
+                else ["echo"],
+                priority=t.get("priority", "medium"),
+                depends_on=t.get("depends_on", []),
+                files_in_scope=t.get("files_in_scope", []),
+            )
+            tasks.append(task)
+
         return tasks
 
     async def assign_task(self, task: TaskPacket) -> Optional[str]:
         """
         Assign a task to an appropriate agent.
-        
+
         Returns:
             session_id if successfully assigned, None otherwise
         """
         # Check if role is available
         if not role_registry.has_role(task.role_required):
-            if hasattr(self, '_push_event_callback') and self._push_event_callback:
-                self._push_event_callback("warning", "coordinator", 
-                                        f"Role '{task.role_required}' not available")
+            if hasattr(self, "_push_event_callback") and self._push_event_callback:
+                self._push_event_callback(
+                    "warning",
+                    "coordinator",
+                    f"Role '{task.role_required}' not available",
+                )
             return None
-        
+
         # Check if any runtimes are available
         from ..runtimes.registry import registry
+
         available_runtimes = registry.list_available()
         if not available_runtimes:
-            if hasattr(self, '_push_event_callback') and self._push_event_callback:
-                self._push_event_callback("error", "coordinator", 
-                                        "No runtimes available.")
+            if hasattr(self, "_push_event_callback") and self._push_event_callback:
+                self._push_event_callback(
+                    "error", "coordinator", "No runtimes available."
+                )
             return None
-        
-        requested_runtime = task.runtime_preference[0] if task.runtime_preference else "echo"
+
+        requested_runtime = (
+            task.runtime_preference[0] if task.runtime_preference else "echo"
+        )
         if requested_runtime not in available_runtimes:
             requested_runtime = available_runtimes[0]
-        
+
         prompt_path = f"src/agents/definitions/{task.role_required}.md"
         if not os.path.exists(prompt_path):
             prompt_path = "src/agents/definitions/scout.md"
-            
+
         policy = self._role_tool_policy.get(task.role_required, {})
-        attached_skills = getattr(task, 'skills', [])
+        attached_skills = getattr(task, "skills", [])
         allowed_tools = list(policy.get("allowed", []))
         blocked_tools = list(policy.get("blocked", []))
         extra_instructions = []
 
         from ..skills.registry import skill_registry
+
         for skill_name in attached_skills:
             skill_def = skill_registry.get_skill(skill_name)
             if skill_def:
                 allowed_tools.extend(skill_def.allowed_tools)
                 blocked_tools.extend(skill_def.blocked_tools)
                 if skill_def.instructions:
-                    extra_instructions.append(f"\n--- SKILL: {skill_name} ---\n{skill_def.instructions}")
+                    extra_instructions.append(
+                        f"\n--- SKILL: {skill_name} ---\n{skill_def.instructions}"
+                    )
 
         from ..messaging.db import db as swarm_db
-        past_lessons = await swarm_db.get_lessons_for_role(task.role_required)
+
+        # Best-effort: fetch past lessons to enrich the agent's task context.
+        # If the database isn't connected (e.g. in tests), skip silently.
+        past_lessons: list[str] = []
+        try:
+            past_lessons = await swarm_db.get_lessons_for_role(task.role_required)
+        except RuntimeError:
+            # DB not connected — proceed without lesson context
+            pass
         experience_context = ""
         if past_lessons:
             lessons_text = "\n".join([f"- {l}" for l in past_lessons])
-            experience_context = f"\n\n## PAST EXPERIENCE & LESSONS LEARNED\n{lessons_text}\n"
+            experience_context = (
+                f"\n\n## PAST EXPERIENCE & LESSONS LEARNED\n{lessons_text}\n"
+            )
 
         config = AgentConfig(
             name=f"agent-{task.role_required}-{task.id}",
@@ -206,21 +194,23 @@ class Coordinator:
             allowed_tools=allowed_tools,
             blocked_tools=blocked_tools,
             read_only=self._role_read_only.get(task.role_required, False),
-            skills=attached_skills
+            skills=attached_skills,
         )
-        
+
         try:
             session_id = await agent_manager.spawn_agent(config)
             self._active_tasks[session_id] = task
             task.status = "active"
-            
+
             for callback in self._on_task_assigned_callbacks:
                 callback(session_id, task)
-            
+
             return session_id
         except Exception as e:
             if self._push_event_callback:
-                self._push_event_callback("error", "coordinator", f"Failed to spawn agent: {e}")
+                self._push_event_callback(
+                    "error", "coordinator", f"Failed to spawn agent: {e}"
+                )
             return None
 
     async def get_task_status(self, session_id: str) -> Optional[TaskPacket]:
@@ -230,25 +220,31 @@ class Coordinator:
     async def process_task_queue(self):
         """Find and spawn all tasks that are ready for execution."""
         self._scan_for_overlaps()
-        
-        if any(t.potential_conflict for t in self._task_queue if t.status not in ["completed", "active"]):
+
+        if any(
+            t.potential_conflict
+            for t in self._task_queue
+            if t.status not in ["completed", "active"]
+        ):
             asyncio.create_task(self.resolve_conflicts())
 
         ready_tasks = self._get_ready_tasks()
-        
+
         for task in ready_tasks:
             if task.potential_conflict:
                 continue
-                
+
             current_count = await agent_manager.get_agent_count()
             if current_count >= 5:
                 break
-                
+
             task.status = "active"
             asyncio.create_task(self.assign_task(task))
-            
-            if hasattr(self, '_push_event_callback') and self._push_event_callback:
-                self._push_event_callback("info", "coordinator", f"launched parallel task: {task.title}")
+
+            if hasattr(self, "_push_event_callback") and self._push_event_callback:
+                self._push_event_callback(
+                    "info", "coordinator", f"launched parallel task: {task.title}"
+                )
 
     async def complete_task(self, session_id: str):
         """Mark a task as completed with output validation."""
@@ -260,33 +256,40 @@ class Coordinator:
             return
 
         handoff = self._parse_handoff_json(status.last_output)
-        
+
         if not handoff and status.state == "done":
-            if hasattr(self, '_push_event_callback') and self._push_event_callback:
-                self._push_event_callback("info", "coordinator", f"nudging {session_id} for missing handoff JSON")
-            
+            if hasattr(self, "_push_event_callback") and self._push_event_callback:
+                self._push_event_callback(
+                    "info",
+                    "coordinator",
+                    f"nudging {session_id} for missing handoff JSON",
+                )
+
             nudge_msg = "Task appears complete but handoff JSON is missing. Please output the structured JSON handoff block."
             await agent_manager.send_message(session_id, nudge_msg)
             return
 
         if session_id in self._active_tasks:
             task = self._active_tasks.pop(session_id)
-            
+
             if status.role == "arbiter" and handoff:
                 self._apply_arbiter_resolution(handoff)
                 return
 
             task.status = "completed"
             self._task_history.append(task)
-            
+
             if handoff and handoff.get("critique"):
                 from ..messaging.db import db as swarm_db
-                asyncio.create_task(swarm_db.add_experience_log(
-                    role=status.role,
-                    task_title=task.title,
-                    status=handoff.get("status", "done"),
-                    critique=handoff.get("critique")
-                ))
+
+                asyncio.create_task(
+                    swarm_db.add_experience_log(
+                        role=status.role,
+                        task_title=task.title,
+                        status=handoff.get("status", "done"),
+                        critique=handoff.get("critique"),
+                    )
+                )
 
             asyncio.create_task(self.process_task_queue())
 
@@ -295,7 +298,7 @@ class Coordinator:
                     from_agent=session_id,
                     to_role=handoff["handoff_to"],
                     task_title=task.title,
-                    status="done"
+                    status="done",
                 )
 
     def _apply_arbiter_resolution(self, resolution: dict):
@@ -305,29 +308,35 @@ class Coordinator:
             title = update.get("title")
             for task in self._task_queue:
                 if task.title == title:
-                    if "status" in update: task.status = update["status"]
-                    if "depends_on" in update: task.depends_on = update["depends_on"]
+                    if "status" in update:
+                        task.status = update["status"]
+                    if "depends_on" in update:
+                        task.depends_on = update["depends_on"]
                     if task.status != "blocked":
                         task.potential_conflict = False
-        
-        if hasattr(self, '_push_event_callback') and self._push_event_callback:
-            self._push_event_callback("done", "coordinator", "Arbiter resolution applied")
-        
+
+        if hasattr(self, "_push_event_callback") and self._push_event_callback:
+            self._push_event_callback(
+                "done", "coordinator", "Arbiter resolution applied"
+            )
+
         asyncio.create_task(self.process_task_queue())
 
     def _parse_handoff_json(self, output: str) -> Optional[dict]:
         """Extract and validate the JSON handoff block from agent output."""
-        if not output: return None
+        if not output:
+            return None
         try:
-            lines = output.strip().split('\n')
+            lines = output.strip().split("\n")
             for i in range(len(lines) - 1, -1, -1):
                 line = lines[i].strip()
-                if line.startswith('{') and line.endswith('}'):
+                if line.startswith("{") and line.endswith("}"):
                     data = json.loads(line)
                     required = {"role", "status", "summary"}
                     if all(k in data for k in required):
                         return data
-        except Exception: pass
+        except Exception:
+            pass
         return None
 
     def get_role_priority(self, role: str) -> int:
@@ -338,30 +347,42 @@ class Coordinator:
         # 1. Check for cross-swarm locks
         try:
             from ..messaging.db import db as swarm_db
-            locked_resources = asyncio.run_coroutine_threadsafe(
-                swarm_db.get_locked_resources(), 
-                asyncio.get_event_loop()
-            ) if asyncio.get_event_loop().is_running() else []
+
+            locked_resources = (
+                asyncio.run_coroutine_threadsafe(
+                    swarm_db.get_locked_resources(), asyncio.get_event_loop()
+                )
+                if asyncio.get_event_loop().is_running()
+                else []
+            )
         except RuntimeError:
-            locked_resources = [] # DB not ready or running in different context
+            locked_resources = []  # DB not ready or running in different context
 
         # 2. Local queue scan
         for i, task_a in enumerate(self._task_queue):
-            if task_a.status in ["completed", "failed"]: continue
-            
+            if task_a.status in ["completed", "failed"]:
+                continue
+
             a_files = set(task_a.files_in_scope or [])
-            
+
             # Check against global locks
             external_overlap = a_files.intersection(set(locked_resources))
             if external_overlap:
                 task_a.potential_conflict = True
-                task_a.conflict_details = f"File locked by external swarm: {', '.join(external_overlap)}"
-                if hasattr(self, '_push_event_callback') and self._push_event_callback:
-                    self._push_event_callback("warn", "coordinator", f"External lock conflict on '{task_a.title}'")
+                task_a.conflict_details = (
+                    f"File locked by external swarm: {', '.join(external_overlap)}"
+                )
+                if hasattr(self, "_push_event_callback") and self._push_event_callback:
+                    self._push_event_callback(
+                        "warn",
+                        "coordinator",
+                        f"External lock conflict on '{task_a.title}'",
+                    )
                 continue
 
-            for task_b in self._task_queue[i+1:]:
-                if task_b.status in ["completed", "failed"]: continue
+            for task_b in self._task_queue[i + 1 :]:
+                if task_b.status in ["completed", "failed"]:
+                    continue
                 b_files = set(task_b.files_in_scope or [])
                 overlap = a_files.intersection(b_files)
                 if overlap:
@@ -370,14 +391,24 @@ class Coordinator:
                     details = f"Overlap detected on files: {', '.join(overlap)}"
                     task_a.conflict_details = details
                     task_b.conflict_details = details
-                    if hasattr(self, '_push_event_callback') and self._push_event_callback:
-                        self._push_event_callback("warn", "coordinator", f"Conflict: '{task_a.title}' vs '{task_b.title}'")
+                    if (
+                        hasattr(self, "_push_event_callback")
+                        and self._push_event_callback
+                    ):
+                        self._push_event_callback(
+                            "warn",
+                            "coordinator",
+                            f"Conflict: '{task_a.title}' vs '{task_b.title}'",
+                        )
 
     def _get_ready_tasks(self) -> List[TaskPacket]:
         ready = []
-        completed_titles = {t.title for t in self._task_history if t.status == "completed"}
+        completed_titles = {
+            t.title for t in self._task_history if t.status == "completed"
+        }
         for task in self._task_queue:
-            if task.status in ["completed", "active", "failed"]: continue
+            if task.status in ["completed", "active", "failed"]:
+                continue
             all_met = True
             for dep_title in task.depends_on:
                 if dep_title not in completed_titles:
@@ -394,32 +425,53 @@ class Coordinator:
         adj = {t.title: t.depends_on for t in tasks}
         visited = set()
         path = set()
+
         def has_cycle(v):
             visited.add(v)
             path.add(v)
             for neighbor in adj.get(v, []):
                 if neighbor not in visited:
-                    if has_cycle(neighbor): return True
-                elif neighbor in path: return True
+                    if has_cycle(neighbor):
+                        return True
+                elif neighbor in path:
+                    return True
             path.remove(v)
             return False
+
         for node in adj:
             if node not in visited:
-                if has_cycle(node): return True
+                if has_cycle(node):
+                    return True
         return False
 
     async def resolve_conflicts(self):
         """Identify flagged conflicts and spawn an Arbiter to resolve them."""
-        conflicting = [t for t in self._task_queue if t.potential_conflict and t.status != "active"]
-        if not conflicting: return
-        if hasattr(self, '_push_event_callback') and self._push_event_callback:
-            self._push_event_callback("info", "coordinator", f"spawning Arbiter to resolve {len(conflicting)} conflicts")
-        conflict_report = "\n".join([f"- Task: {t.title}, Files: {t.files_in_scope}, Goal: {t.description}" for t in conflicting])
+        conflicting = [
+            t for t in self._task_queue if t.potential_conflict and t.status != "active"
+        ]
+        if not conflicting:
+            return
+        if hasattr(self, "_push_event_callback") and self._push_event_callback:
+            self._push_event_callback(
+                "info",
+                "coordinator",
+                f"spawning Arbiter to resolve {len(conflicting)} conflicts",
+            )
+        conflict_report = "\n".join(
+            [
+                f"- Task: {t.title}, Files: {t.files_in_scope}, Goal: {t.description}"
+                for t in conflicting
+            ]
+        )
         config = AgentConfig(
-            name="system-arbiter", role="arbiter",
+            name="system-arbiter",
+            role="arbiter",
             task=f"The following tasks have overlapping scope. Decide on a resolution strategy:\n\n{conflict_report}",
-            worktree_path=".", model="default", runtime="vibe",
-            system_prompt_path="src/agents/definitions/arbiter.md", read_only=True
+            worktree_path=".",
+            model="default",
+            runtime="vibe",
+            system_prompt_path="src/agents/definitions/arbiter.md",
+            read_only=True,
         )
         await agent_manager.spawn_agent(config)
 
@@ -430,12 +482,17 @@ class Coordinator:
             if current_index < len(workflow) - 1:
                 return workflow[current_index + 1]
             return None
-        except ValueError: return None
+        except ValueError:
+            return None
 
-    def trigger_handoff(self, from_agent: str, to_role: str, task_title: str, status: str):
+    def trigger_handoff(
+        self, from_agent: str, to_role: str, task_title: str, status: str
+    ):
         for callback in self._on_handoff_callbacks:
-            try: callback(from_agent, to_role, task_title, status)
-            except Exception: pass
+            try:
+                callback(from_agent, to_role, task_title, status)
+            except Exception:
+                pass
 
 
 # Global coordinator instance

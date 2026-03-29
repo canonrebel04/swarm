@@ -18,15 +18,15 @@
 ### Role System
 - [x] Create role registry in `src/roles/registry.py`
 - [x] Implement role contracts system in `src/roles/contracts.py`
-- [ ] Create role guards for permission enforcement
-- [ ] Implement role prompts system in `src/roles/prompts.py`
-- [ ] Create role policies system in `src/roles/policies.py`
+- [x] Create role guards for permission enforcement (src/safety/enforcer.py)
+- [x] Implement role prompts system in `src/roles/prompts.py`
+- [x] Create role policies system (centralized in src/roles/prompts.py)
 
 ### Messaging & State
 - [x] Set up SQLite database schema in `src/messaging/db.py`
-- [ ] Implement messaging protocol in `src/messaging/protocol.py`
-- [ ] Create event bus system in `src/messaging/bus.py`
-- [ ] Implement event logging in `src/messaging/events.py`
+- [x] Implement messaging protocol (integrated in db.py + event_bus.py)
+- [x] Create event bus system in `src/messaging/event_bus.py`
+- [x] Implement event logging (integrated in event_bus.py)
 
 ### Worktree Management
 - [x] Create worktree manager in `src/worktree/manager.py`
@@ -69,11 +69,11 @@
 ## 🛡️ Safety Systems
 - [x] Implement role locking mechanism ✅
 - [x] Create anti-drift detection system ✅
-- [ ] Build tool policy enforcement
-- [ ] Implement filesystem access controls
-- [ ] Add structured output validation
-- [ ] Create supervisor intervention workflow
-- [ ] Implement drift detection alerts
+- [x] Build tool policy enforcement (src/safety/enforcer.py)
+- [x] Implement filesystem access controls (src/safety/fs_guard.py)
+- [x] Add structured output validation (src/safety/output_validator.py)
+- [x] Create supervisor intervention workflow (watchdog escalation)
+- [x] Implement drift detection alerts (anti-drift alert pipeline)
 
 ## 🎨 TUI Development
 - [x] Set up Textual app structure in `src/tui/app.py`
@@ -93,13 +93,13 @@
 - [x] Implement live clock in header subtitle with agent count
 
 ## 🔧 Orchestrator Components
-- [ ] Implement overseer logic in `src/orchestrator/overseer.py`
+- [x] Implement overseer logic in `src/orchestrator/overseer.py`
 - [x] Create coordinator for task decomposition
 - [x] Build dispatcher for agent spawning (integrated in coordinator)
 - [x] Implement agent manager for fleet tracking
 - [x] Create watchdog for health monitoring
 - [x] Build event bus wiring from orchestrator to TUI
-- [ ] Build merge manager for conflict resolution
+- [x] Build merge manager for conflict resolution
 - [ ] Implement completion tracker
 
 ## ⚙️ CLI Commands

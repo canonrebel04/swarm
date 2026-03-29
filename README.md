@@ -18,15 +18,15 @@ poetry install
 ### 2. Initialization & Setup
 ```bash
 # Initialize project directories and database
-poetry run swarm init
+swarm init
 
 # Configure your LLM providers and model selection
-poetry run swarm setup
+swarm setup
 ```
 
 ### 3. Launch TUI
 ```bash
-poetry run swarm tui
+swarm tui
 ```
 
 ---
@@ -36,9 +36,9 @@ poetry run swarm tui
 Swarm is built as a hierarchical orchestration system:
 
 1.  **User**: Provides the high-level objective via the TUI.
-2.  **Overseer**: An LLM-backed central brain that decomposes the objective into tasks.
-3.  **Coordinator**: Internal logic managing agent lifecycles, worktrees, and data flow.
-4.  **Agent Fleet**: Specialized worker agents bound by specific roles.
+2.  **Overseer** (`src/orchestrator/overseer.py`): LLM-backed brain that decomposes objectives into task DAGs. Falls back to heuristic decomposition when no LLM is available.
+3.  **Coordinator** (`src/orchestrator/coordinator.py`): Manages task assignment, handoff chains, and conflict resolution.
+4.  **Agent Fleet**: Specialized worker agents bound by specific roles, each in an isolated git worktree.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
@@ -62,7 +62,7 @@ Swarm is built as a hierarchical orchestration system:
 
 ## 🤖 Agent Roles & Contracts
 
-Swarm enforces strict **Role Locking** to prevent agent drift. Each agent is bound by a YAML contract and a Markdown definition.
+Swarm enforces strict **Role Locking** to prevent agent drift. Each agent is bound by a YAML contract (`src/roles/contracts/`) and a Markdown definition (`src/agents/definitions/`).
 
 | Role | Mission | Allowed Actions |
 | :--- | :--- | :--- |
@@ -73,40 +73,63 @@ Swarm enforces strict **Role Locking** to prevent agent drift. Each agent is bou
 | **Reviewer** | Quality Audit | Audit changes, Feedback |
 | **Merger** | Integration | Resolve conflicts, Merge |
 | **Monitor** | Fleet Observability | Track health, Detect drift |
+| **Coordinator** | Task Decomposition | Assign tasks, Manage handoffs |
+| **Lead** | Team Leadership | Plan, Coordinate, Implement |
+
+Tool policies are centralized in `src/roles/prompts.py` and enforced by:
+- `src/safety/enforcer.py` — real-time tool policy validation
+- `src/safety/fs_guard.py` — per-role filesystem access controls
+- `src/safety/anti_drift.py` — regex-based drift detection with alert pipeline
+- `src/safety/output_validator.py` — structured JSON handoff validation
 
 ---
 
 ## 🔌 Supported Runtimes
 
-Swarm communicates with a variety of agent CLIs through standardized adapters:
+Swarm communicates with a variety of agent CLIs through standardized adapters (`src/runtimes/`):
 
-- **Claude Code**: Multi-turn reasoning and complex implementation.
-- **Mistral Vibe**: Fast execution and task-first implementation.
-- **Gemini CLI**: Deep analysis and large-context exploration.
-- **Codex CLI**: OpenAI-powered task execution.
-- **OpenCode**: SSE-based interactive coding server.
-- **Hermes**: Local model support via Ollama/OpenAI-compat APIs.
-- **Goose / Cline / Qodo**: Extended task-first agents.
+| Runtime | Binary | Best For |
+| :--- | :--- | :--- |
+| **Claude Code** | `claude` | Multi-turn reasoning, complex implementation |
+| **Mistral Vibe** | `vibe` | Fast execution, task-first implementation |
+| **Gemini CLI** | `gemini` | Deep analysis, large-context exploration |
+| **Codex CLI** | `codex` | OpenAI-powered task execution |
+| **OpenCode** | `opencode` | SSE-based interactive coding |
+| **Hermes** | `hermes` | Local model support via Ollama |
+| **Goose** | `goose` | Extended task-first agent |
+| **Cline** | `cline` | CLI-based coding agent |
+| **Qodo** | `qodo` | Gen CLI agent |
+| **OpenClaw** | `openclaw` | Experimental agent |
+| **SSH** | — | Remote execution via paramiko |
+| **Docker** | — | Containerized execution |
+| **Echo** | — | Testing / simulation |
 
 ---
 
 ## 🛡 Safety & Isolation
 
-- **Worktree Isolation**: Every active agent operates in its own `git worktree` to prevent file conflicts.
-- **Tool Policy Enforcement**: Permissions are enforced at the runtime level (e.g., Scouts are spawned in `--read-only` mode).
-- **Anti-Drift Monitor**: Real-time inspection of agent output to detect and alert on role violations.
-- **Structured Handoffs**: Tasks are only completed when a valid JSON handoff block is produced and validated.
+- **Worktree Isolation**: Every active agent operates in its own `git worktree`.
+- **Tool Policy Enforcement** (`src/safety/enforcer.py`): Validates tool invocations against role policies in real-time.
+- **Filesystem Guards** (`src/safety/fs_guard.py`): Blocks access to sensitive paths; read-only roles cannot write.
+- **Anti-Drift Monitor** (`src/safety/anti_drift.py`): Regex detection of forbidden tool usage with escalation alerts.
+- **Output Validation** (`src/safety/output_validator.py`): Validates JSON handoff blocks against schema.
+- **Watchdog Escalation**: nudge → respawn → supervisor alert for stalled/errant agents.
 
 ---
 
 ## 🛠 CLI Reference
 
-- `swarm init`: Initialize a new swarm project.
-- `swarm setup`: Interactive model and provider configuration.
-- `swarm tui`: Launch the main coordination interface.
-- `swarm doctor`: Run diagnostic checks on your environment.
-- `swarm logs`: View recent system events and agent activity.
-- `swarm cleanup`: Remove active worktrees and temporary files.
+| Command | Description |
+| :--- | :--- |
+| `swarm init` | Initialize a new swarm project |
+| `swarm setup` | Interactive model and provider configuration |
+| `swarm tui` | Launch the main coordination interface |
+| `swarm doctor` | Run diagnostic checks on your environment |
+| `swarm logs` | View recent system events and agent activity |
+| `swarm cleanup` | Remove active worktrees and temporary files |
+| `swarm serve` | Launch the FastAPI web control plane |
+| `swarm roles` | List all available agent roles |
+| `swarm runtimes` | List all supported runtimes and their status |
 
 ---
 

@@ -229,7 +229,7 @@ class TestEventBusIntegration:
         coordinator._push_event_callback = event_callback
         
         # Trigger an event
-        await coordinator.decompose_task("test task")
+        await coordinator.decompose_goal("test task")
         
         # Give time for async processing
         await asyncio.sleep(0.2)

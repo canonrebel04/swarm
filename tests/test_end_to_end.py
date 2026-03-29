@@ -23,7 +23,7 @@ async def test_complete_workflow():
     
     # Decompose a task
     task_description = "Implement user authentication system"
-    tasks = await coordinator.decompose_task(task_description)
+    tasks = await coordinator.decompose_goal(task_description)
     
     assert len(tasks) == 3
     
@@ -98,7 +98,7 @@ async def test_system_integration():
     assert len(roles) >= 4  # We have at least scout, builder, developer, tester
     
     # Test coordinator
-    tasks = await coordinator.decompose_task("Build API endpoint")
+    tasks = await coordinator.decompose_goal("Build API endpoint")
     assert len(tasks) > 0
     
     # Test agent manager

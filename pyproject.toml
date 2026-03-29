@@ -6,6 +6,9 @@ authors = ["Cachy <cachy@mistral.ai>"]
 readme = "README.md"
 packages = [{include = "src"}]
 
+[tool.poetry.scripts]
+swarm = "src.cli.app:app"
+
 [tool.poetry.dependencies]
 python = "^3.12"
 textual = "^0.48.0"

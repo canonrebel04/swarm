@@ -7,14 +7,18 @@ import asyncio
 from typing import Optional
 import os
 
+# Canonical database path — all modules should use this
+DB_DIR = os.path.join(".swarm", "data")
+DB_PATH = os.path.join(DB_DIR, "swarm.db")
+
 
 class SwarmDB:
     """SQLite database for storing swarm messages and state."""
 
-    def __init__(self, db_path: str = ".swarm/messages.db"):
+    def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
         self._conn: Optional[aiosqlite.Connection] = None
-        
+
         # Ensure directory exists
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
@@ -101,11 +105,7 @@ class SwarmDB:
         await self._conn.commit()
 
     async def add_message(
-        self, 
-        session_id: str, 
-        sender: str, 
-        content: str, 
-        message_type: str = "text"
+        self, session_id: str, sender: str, content: str, message_type: str = "text"
     ) -> None:
         """Add a message to the database."""
         if not self._conn:
@@ -116,7 +116,7 @@ class SwarmDB:
             INSERT INTO messages (session_id, sender, content, message_type)
             VALUES (?, ?, ?, ?)
             """,
-            (session_id, sender, content, message_type)
+            (session_id, sender, content, message_type),
         )
         await self._conn.commit()
 
@@ -133,18 +133,18 @@ class SwarmDB:
             ORDER BY timestamp DESC
             LIMIT ?
             """,
-            (session_id, limit)
+            (session_id, limit),
         )
-        
+
         return await cursor.fetchall()
 
     async def create_agent_session(
-        self, 
-        session_id: str, 
-        agent_name: str, 
-        role: str, 
-        runtime: str, 
-        state: str = "queued"
+        self,
+        session_id: str,
+        agent_name: str,
+        role: str,
+        runtime: str,
+        state: str = "queued",
     ) -> None:
         """Create a new agent session record."""
         if not self._conn:
@@ -156,7 +156,7 @@ class SwarmDB:
             (session_id, agent_name, role, runtime, state)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (session_id, agent_name, role, runtime, state)
+            (session_id, agent_name, role, runtime, state),
         )
         await self._conn.commit()
 
@@ -171,7 +171,7 @@ class SwarmDB:
             SET state = ?, updated_at = CURRENT_TIMESTAMP
             WHERE session_id = ?
             """,
-            (state, session_id)
+            (state, session_id),
         )
         await self._conn.commit()
 
@@ -187,15 +187,15 @@ class SwarmDB:
             ORDER BY updated_at DESC
             """
         )
-        
+
         return await cursor.fetchall()
 
     async def add_event(
-        self, 
-        event_type: str, 
-        session_id: Optional[str] = None, 
-        agent_name: Optional[str] = None, 
-        data: Optional[str] = None
+        self,
+        event_type: str,
+        session_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        data: Optional[str] = None,
     ) -> None:
         """Add an event to the event log."""
         if not self._conn:
@@ -206,7 +206,7 @@ class SwarmDB:
             INSERT INTO events (event_type, session_id, agent_name, data)
             VALUES (?, ?, ?, ?)
             """,
-            (event_type, session_id, agent_name, data)
+            (event_type, session_id, agent_name, data),
         )
         await self._conn.commit()
 
@@ -222,9 +222,9 @@ class SwarmDB:
             ORDER BY timestamp DESC
             LIMIT ?
             """,
-            (limit,)
+            (limit,),
         )
-        
+
         return await cursor.fetchall()
 
     async def register_swarm_instance(self, swarm_id: str, capabilities: str) -> None:
@@ -241,7 +241,7 @@ class SwarmDB:
                 capabilities = excluded.capabilities,
                 status = 'active'
             """,
-            (swarm_id, capabilities)
+            (swarm_id, capabilities),
         )
         await self._conn.commit()
 
@@ -259,29 +259,33 @@ class SwarmDB:
         )
         return await cursor.fetchall()
 
-    async def acquire_lock(self, resource_path: str, swarm_id: str, timeout_seconds: int = 300) -> bool:
+    async def acquire_lock(
+        self, resource_path: str, swarm_id: str, timeout_seconds: int = 300
+    ) -> bool:
         """Attempt to acquire a lock on a resource for a specific swarm."""
         if not self._conn:
             raise RuntimeError("Database not connected")
-            
+
         # First clear expired locks
-        await self._conn.execute("DELETE FROM resource_locks WHERE expires_at < CURRENT_TIMESTAMP")
-        
+        await self._conn.execute(
+            "DELETE FROM resource_locks WHERE expires_at < CURRENT_TIMESTAMP"
+        )
+
         try:
             await self._conn.execute(
                 """
                 INSERT INTO resource_locks (resource_path, swarm_id, expires_at)
                 VALUES (?, ?, datetime('now', '+' || ? || ' seconds'))
                 """,
-                (resource_path, swarm_id, timeout_seconds)
+                (resource_path, swarm_id, timeout_seconds),
             )
             await self._conn.commit()
             return True
-        except Exception: # UNIQUE constraint failed
+        except Exception:  # UNIQUE constraint failed
             # If the lock is already held by THIS swarm, we can extend it
             cursor = await self._conn.execute(
                 "SELECT swarm_id FROM resource_locks WHERE resource_path = ?",
-                (resource_path,)
+                (resource_path,),
             )
             row = await cursor.fetchone()
             if row and row[0] == swarm_id:
@@ -291,7 +295,7 @@ class SwarmDB:
                     SET expires_at = datetime('now', '+' || ? || ' seconds')
                     WHERE resource_path = ? AND swarm_id = ?
                     """,
-                    (timeout_seconds, resource_path, swarm_id)
+                    (timeout_seconds, resource_path, swarm_id),
                 )
                 await self._conn.commit()
                 return True
@@ -301,10 +305,10 @@ class SwarmDB:
         """Release a lock held by a swarm."""
         if not self._conn:
             raise RuntimeError("Database not connected")
-            
+
         await self._conn.execute(
             "DELETE FROM resource_locks WHERE resource_path = ? AND swarm_id = ?",
-            (resource_path, swarm_id)
+            (resource_path, swarm_id),
         )
         await self._conn.commit()
 
@@ -312,11 +316,13 @@ class SwarmDB:
         """Get a list of all currently locked resources."""
         if not self._conn:
             raise RuntimeError("Database not connected")
-            
+
         # First clear expired locks
-        await self._conn.execute("DELETE FROM resource_locks WHERE expires_at < CURRENT_TIMESTAMP")
+        await self._conn.execute(
+            "DELETE FROM resource_locks WHERE expires_at < CURRENT_TIMESTAMP"
+        )
         await self._conn.commit()
-        
+
         cursor = await self._conn.execute("SELECT resource_path FROM resource_locks")
         rows = await cursor.fetchall()
         return [row[0] for row in rows]
@@ -327,7 +333,7 @@ class SwarmDB:
         task_title: str,
         status: str,
         critique: Optional[str] = None,
-        lessons_learned: Optional[str] = None
+        lessons_learned: Optional[str] = None,
     ) -> None:
         """Add a new experience log entry."""
         if not self._conn:
@@ -338,7 +344,7 @@ class SwarmDB:
             INSERT INTO experience_logs (role, task_title, status, critique, lessons_learned)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (role, task_title, status, critique, lessons_learned)
+            (role, task_title, status, critique, lessons_learned),
         )
         await self._conn.commit()
 
@@ -355,13 +361,15 @@ class SwarmDB:
             ORDER BY timestamp DESC
             LIMIT ?
             """,
-            (role, limit)
+            (role, limit),
         )
-        
+
         rows = await cursor.fetchall()
         return [row[0] for row in rows]
 
-    async def get_recent_critiques(self, role: Optional[str] = None, limit: int = 10) -> list[tuple]:
+    async def get_recent_critiques(
+        self, role: Optional[str] = None, limit: int = 10
+    ) -> list[tuple]:
         """Get recent critiques for reflection."""
         if not self._conn:
             raise RuntimeError("Database not connected")
@@ -371,7 +379,7 @@ class SwarmDB:
         if role:
             query += " AND role = ?"
             params.append(role)
-        
+
         query += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
 
@@ -382,7 +390,7 @@ class SwarmDB:
         """Clear all events from the events table."""
         if not self._conn:
             raise RuntimeError("Database not connected")
-        
+
         await self._conn.execute("DELETE FROM events")
         await self._conn.commit()
 

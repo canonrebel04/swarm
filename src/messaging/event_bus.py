@@ -15,12 +15,13 @@ from typing import Callable, List, Dict, Any, Optional, AsyncIterator
 from dataclasses import dataclass
 import json
 
-from .db import SwarmDB
+from .db import SwarmDB, DB_PATH
 
 
 @dataclass
 class Event:
     """Represents a system event."""
+
     event_id: str
     event_type: str
     source: str
@@ -33,31 +34,31 @@ class Event:
 
 class EventBus:
     """Centralized event bus with persistence and callback support."""
-    
-    def __init__(self, db_path: str = ".polyglot/swarm.db"):
+
+    def __init__(self, db_path: str = DB_PATH):
         self.db = SwarmDB(db_path)
         self._subscribers: Dict[str, List[Callable]] = {}
         self._lock = asyncio.Lock()
         self._init_db()
-    
+
     def _init_db(self) -> None:
         """Initialize database tables for events."""
         # The events table should already exist from SwarmDB initialization
         # If not, it will be created when we first use it
         pass
-    
+
     async def emit(
-        self, 
-        event_type: str, 
-        source: str, 
-        data: dict, 
-        session_id: Optional[str] = None, 
+        self,
+        event_type: str,
+        source: str,
+        data: dict,
+        session_id: Optional[str] = None,
         agent_name: Optional[str] = None,
-        target_swarm: Optional[str] = None
+        target_swarm: Optional[str] = None,
     ) -> None:
         """
         Emit an event that will be persisted and sent to subscribers.
-        
+
         Args:
             event_type: Type of event (e.g., 'spawn', 'error', 'warning')
             source: Source of the event (e.g., 'coordinator', 'agent-manager')
@@ -74,33 +75,35 @@ class EventBus:
             timestamp=time.time(),
             session_id=session_id,
             agent_name=agent_name,
-            target_swarm=target_swarm
+            target_swarm=target_swarm,
         )
-        
+
         # Persist event to database
         await self._persist_event(event)
-        
+
         # Notify subscribers
         await self._notify_subscribers(event)
-    
+
     async def _persist_event(self, event: Event) -> None:
         """Persist event to SQLite database using existing SwarmDB method."""
         # Convert our event data to JSON string for the existing schema
-        data_json = json.dumps({
-            **event.data,
-            "_event_id": event.event_id,
-            "_source": event.source,
-            "_timestamp": event.timestamp,
-            "_target_swarm": event.target_swarm
-        })
-        
+        data_json = json.dumps(
+            {
+                **event.data,
+                "_event_id": event.event_id,
+                "_source": event.source,
+                "_timestamp": event.timestamp,
+                "_target_swarm": event.target_swarm,
+            }
+        )
+
         await self.db.add_event(
             event_type=event.event_type,
             session_id=event.session_id,
             agent_name=event.agent_name,
-            data=data_json
+            data=data_json,
         )
-    
+
     async def _notify_subscribers(self, event: Event) -> None:
         """Notify all subscribers for this event type."""
         async with self._lock:
@@ -113,7 +116,7 @@ class EventBus:
                         callback(event)
                 except Exception as e:
                     print(f"Error in event callback: {e}")
-            
+
             # Notify wildcard subscribers
             for callback in self._subscribers.get("*", []):
                 try:
@@ -123,15 +126,11 @@ class EventBus:
                         callback(event)
                 except Exception as e:
                     print(f"Error in event callback: {e}")
-    
-    def subscribe(
-        self, 
-        event_type: str, 
-        callback: Callable
-    ) -> None:
+
+    def subscribe(self, event_type: str, callback: Callable) -> None:
         """
         Subscribe to events of a specific type.
-        
+
         Args:
             event_type: Event type to subscribe to, or "*" for all events
             callback: Callback function to receive events
@@ -139,31 +138,31 @@ class EventBus:
         if event_type not in self._subscribers:
             self._subscribers[event_type] = []
         self._subscribers[event_type].append(callback)
-    
+
     async def replay(
-        self, 
+        self,
         since_timestamp: Optional[float] = None,
-        event_types: Optional[List[str]] = None
+        event_types: Optional[List[str]] = None,
     ) -> List[Event]:
         """
         Replay events from a specific timestamp.
-        
+
         Args:
             since_timestamp: Only return events after this timestamp
             event_types: Only return events of these types
-            
+
         Returns:
             List of Event objects
         """
         # Use the existing get_recent_events method and filter
         all_events = await self.db.get_recent_events(limit=1000)
-        
+
         events = []
         for row in all_events:
             try:
                 # Parse the stored JSON data
                 event_data = json.loads(row[3])  # data column
-                
+
                 # Reconstruct the event
                 event = Event(
                     event_id=event_data.get("_event_id", str(uuid.uuid4())),
@@ -172,42 +171,38 @@ class EventBus:
                     session_id=row[1],  # session_id column
                     agent_name=row[2],  # agent_name column
                     data={k: v for k, v in event_data.items() if not k.startswith("_")},
-                    timestamp=event_data.get("_timestamp", time.time())
+                    timestamp=event_data.get("_timestamp", time.time()),
                 )
-                
+
                 # Apply filters
                 if since_timestamp and event.timestamp <= since_timestamp:
                     continue
                 if event_types and event.event_type not in event_types:
                     continue
-                
+
                 events.append(event)
-                
+
             except (json.JSONDecodeError, KeyError) as e:
                 print(f"Error parsing event data: {e}")
                 continue
-        
+
         # Sort by timestamp
         events.sort(key=lambda e: e.timestamp)
         return events
-    
-    async def get_events_since(
-        self, 
-        timestamp: float,
-        limit: int = 100
-    ) -> List[Event]:
+
+    async def get_events_since(self, timestamp: float, limit: int = 100) -> List[Event]:
         """Get recent events since a timestamp (for TUI updates)."""
         return await self.replay(since_timestamp=timestamp)
-    
+
     async def clear_events(self) -> None:
         """Clear all events (for testing)."""
         # Use the SwarmDB method we just added
         await self.db.clear_events()
-    
+
     async def get_event_count(self) -> int:
         """Get total number of events."""
-        result = await self.db.fetch_one("SELECT COUNT(*) FROM events")
-        return result[0] if result else 0
+        all_events = await self.db.get_recent_events(limit=999999)
+        return len(all_events)
 
 
 # Global event bus instance
