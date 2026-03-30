@@ -32,6 +32,7 @@ RUNTIME_BINARIES: Dict[str, Optional[str]] = {
     "ssh": "ssh",  # OpenSSH client
     "docker": "docker",
     "echo": None,  # Built-in, no binary
+    "openai": None,  # HTTP-based, no binary
     "openai-compatible": None,  # HTTP-based, no binary
 }
 
@@ -76,7 +77,7 @@ async def check_runtime(runtime_name: str) -> Dict[str, Any]:
     # 1. Check binary presence
     binary = RUNTIME_BINARIES.get(runtime_name)
     if binary is None:
-        # No binary required (echo, openai-compatible)
+        # No binary required (echo, openai, openai-compatible)
         result["binary_installed"] = True
         result["connectivity"] = "skipped"
     else:
@@ -97,9 +98,30 @@ async def check_runtime(runtime_name: str) -> Dict[str, Any]:
     if runtime_name == "openai-compatible":
         # Check that we can at least import aiohttp (already done)
         # No endpoint to test without configuration; we'll skip connectivity check
-        # unless extra_env provides OPENAI_BASE_URL and OPENAI_API_KEY.
         result["connectivity"] = "skipped"
-        # TODO: optional connectivity test if env vars are set
+    elif runtime_name == "openai":
+        # OpenAI runtime doesn't have a built-in connectivity test,
+        # unless extra_env provides OPENAI_BASE_URL and OPENAI_API_KEY.
+        base_url = os.environ.get("OPENAI_BASE_URL")
+        api_key = os.environ.get("OPENAI_API_KEY")
+
+        if base_url and api_key:
+            try:
+                headers = {"Authorization": f"Bearer {api_key}"}
+                endpoint = f"{base_url.rstrip('/')}/models"
+                timeout = aiohttp.ClientTimeout(total=5.0)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(endpoint, headers=headers) as response:
+                        if response.status == 200:
+                            result["connectivity"] = "reachable"
+                        else:
+                            result["connectivity"] = "unreachable"
+                            result["error"] = f"HTTP {response.status}"
+            except (aiohttp.ClientError, asyncio.TimeoutError, Exception) as e:
+                result["connectivity"] = "unreachable"
+                result["error"] = str(e)
+        else:
+            result["connectivity"] = "skipped"
     elif runtime_name == "echo":
         result["connectivity"] = "reachable"  # always works
     elif binary and result["binary_installed"]:
