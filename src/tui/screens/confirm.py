@@ -4,14 +4,14 @@ Modal dialog for confirming actions like kill, retry, etc.
 """
 
 from textual.app import ComposeResult
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Label, Button
-from textual.containers import Vertical, Horizontal
+from textual.widgets import Button, Label
 
 
 class ConfirmModal(ModalScreen[str]):
     """Modal dialog for confirming actions."""
-    
+
     CSS = """
         ConfirmModal > Vertical {
             align: center middle;
@@ -48,18 +48,25 @@ class ConfirmModal(ModalScreen[str]):
             background: $primary;
         }
     """
-    
+
     def __init__(self, message: str):
         super().__init__()
         self.message = message
-    
+
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Label(self.message)
             with Horizontal():
                 yield Button("Yes", id="yes-button", variant="error")
                 yield Button("No", id="no-button", variant="primary")
-    
+
+    def on_mount(self) -> None:
+        """Focus the safe 'No' button by default to prevent accidental deletions."""
+        try:
+            self.query_one("#no-button").focus()
+        except Exception:
+            pass
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "yes-button":
             self.dismiss("yes")
