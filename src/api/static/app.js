@@ -17,7 +17,13 @@ const state = new Proxy({
 });
 
 // --- 2. API & WebSocket Handlers ---
-const API_KEY = 'swarm_dev_key';
+let API_KEY = localStorage.getItem('SWARM_API_KEY');
+if (!API_KEY) {
+    API_KEY = prompt('Please enter your Swarm API Key:');
+    if (API_KEY) {
+        localStorage.setItem('SWARM_API_KEY', API_KEY);
+    }
+}
 
 async function fetchInitialState() {
     try {

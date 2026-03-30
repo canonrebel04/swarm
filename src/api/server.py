@@ -22,8 +22,9 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
     """Validate API key from header."""
-    # In a real app, read from config/db. For MVP, we check an env var.
-    expected_key = os.environ.get("SWARM_API_KEY", "swarm_dev_key")
+    expected_key = os.environ.get("SWARM_API_KEY")
+    if not expected_key:
+        raise HTTPException(status_code=500, detail="SWARM_API_KEY environment variable not set on server")
     if api_key_header == expected_key:
         return api_key_header
     raise HTTPException(status_code=403, detail="Could not validate credentials")
