@@ -2,10 +2,11 @@
 SQLite database setup for messaging and state management.
 """
 
-import aiosqlite
 import asyncio
-from typing import Optional
 import os
+from typing import Optional
+
+import aiosqlite
 
 # Canonical database path — all modules should use this
 DB_DIR = os.path.join(".swarm", "data")
@@ -102,6 +103,22 @@ class SwarmDB:
             )
         """)
 
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages (session_id)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages (timestamp DESC)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp DESC)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_experience_logs_role ON experience_logs (role)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_resource_locks_expires_at ON resource_locks (expires_at)"
+        )
+
         await self._conn.commit()
 
     async def add_message(
@@ -180,13 +197,11 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        cursor = await self._conn.execute(
-            """
+        cursor = await self._conn.execute("""
             SELECT session_id, agent_name, role, runtime, state
             FROM agent_sessions
             ORDER BY updated_at DESC
-            """
-        )
+            """)
 
         return await cursor.fetchall()
 
@@ -250,13 +265,11 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        cursor = await self._conn.execute(
-            f"""
+        cursor = await self._conn.execute(f"""
             SELECT swarm_id, capabilities, last_heartbeat
             FROM swarm_instances
             WHERE last_heartbeat > datetime('now', '-{timeout_seconds} seconds')
-            """
-        )
+            """)
         return await cursor.fetchall()
 
     async def acquire_lock(
@@ -375,7 +388,7 @@ class SwarmDB:
             raise RuntimeError("Database not connected")
 
         query = "SELECT role, task_title, status, critique FROM experience_logs WHERE lessons_learned IS NULL"
-        params = []
+        params: list[str | int] = []
         if role:
             query += " AND role = ?"
             params.append(role)
