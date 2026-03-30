@@ -92,8 +92,80 @@ class MergeManager:
             await self._perform_auto_merge(handoff)
 
     async def _check_for_conflicts(self, handoff: HandoffEvent) -> List[str]:
+        """Check for conflicts using CodebaseIndex or fallback to advanced check."""
+        try:
+            from src.memory.codebase_index import CodebaseIndex
+            index = CodebaseIndex()
+            return await index.conflict_check(handoff.worktree_branch)
+        except ImportError:
+            await event_bus.emit(
+                "warning",
+                "merge-manager",
+                {"message": "CodebaseIndex not available. Falling back to simple conflict check."}
+            )
+            return await self._advanced_conflict_check(handoff)
+
+    async def _advanced_conflict_check(self, handoff: HandoffEvent) -> List[str]:
         """Check for conflicts using git merge-tree."""
-        return await self._simple_conflict_check(handoff)
+        conflicts = []
+        worktree_path = os.path.join(
+            worktree_manager.base_path, handoff.worktree_branch
+        )
+
+        if not os.path.isdir(worktree_path):
+            return conflicts
+
+        success = False
+        try:
+            # We use git merge-tree to perform a 3-way merge in memory.
+            # `git merge-tree $(git merge-base main HEAD) main HEAD`
+            # For git >= 2.38: `git merge-tree --write-tree main HEAD`
+            # We'll use the older syntax for better compatibility if needed,
+            # but --write-tree is much better at identifying conflicts.
+            # Let's try --write-tree first.
+
+            process = await asyncio.create_subprocess_exec(
+                "git", "merge-tree", "--write-tree", "main", "HEAD",
+                cwd=worktree_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+                # If exit code is 0, no conflicts.
+                # If exit code is non-zero (usually 1), there are conflicts.
+                if process.returncode == 0:
+                    success = True
+                elif process.returncode == 1:
+                    success = True
+                    # Parse conflicting files from stdout
+                    # The output format of `git merge-tree --write-tree` contains:
+                    # <OID>
+                    # <OID> <OID> <OID> <filename>
+                    for line in stdout.decode().strip().splitlines():
+                        parts = line.split("\t")
+                        if len(parts) >= 2:
+                            # Conflicting file path is usually the last part after the tab
+                            conflicting_file = parts[-1]
+                            conflicts.append(conflicting_file)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+
+        except Exception as e:
+            await event_bus.emit(
+                "warning",
+                "merge-manager",
+                {"message": f"Advanced conflict check failed: {str(e)}"}
+            )
+
+        # In case the git version doesn't support --write-tree or it failed,
+        # fallback to the simple conflict check logic to maintain some level of detection
+        if not success:
+            conflicts.extend(await self._simple_conflict_check(handoff))
+
+        return list(set(conflicts))
 
     async def _simple_conflict_check(self, handoff: HandoffEvent) -> List[str]:
         """Conflict detection using git diff between worktree and main."""
