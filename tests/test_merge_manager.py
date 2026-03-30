@@ -153,7 +153,7 @@ async def test_conflict_detection(merge_manager, sample_handoff):
     
     # Mock the import and instantiation
     with patch.dict('sys.modules', {'src.memory.codebase_index': Mock(CodebaseIndex=Mock(return_value=mock_index))}):
-        with patch.object(agent_manager, 'get_all_agents', return_value=[mock_agent]):
+        with patch.object(agent_manager, 'get_all_agents', return_value=[mock_agent], create=True):
             conflicts = await merge_manager._check_for_conflicts(sample_handoff)
             
             # Should detect conflicts
@@ -285,7 +285,7 @@ async def test_simple_conflict_check_fallback(merge_manager, sample_handoff):
     """Test fallback to simple conflict detection when CodebaseIndex unavailable."""
     # Mock the import to raise ImportError
     with patch.dict('sys.modules', {'src.memory.codebase_index': None}):
-        with patch.object(agent_manager, 'get_all_agents', return_value=[]):
+        with patch.object(agent_manager, 'get_all_agents', return_value=[], create=True):
             with patch('src.messaging.event_bus.event_bus.emit', new_callable=AsyncMock) as mock_emit:
                 conflicts = await merge_manager._check_for_conflicts(sample_handoff)
                 
