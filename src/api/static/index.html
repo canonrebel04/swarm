@@ -12,11 +12,11 @@
         <div class="brand">⬡ Swarm</div>
         <nav>
             <ul>
-                <li class="active">Fleet Dashboard</li>
-                <li>Task Graph</li>
-                <li>Skill Registry</li>
-                <li>System Logs</li>
-                <li>Settings</li>
+                <li class="active" tabindex="0" role="button" onkeydown="if(event.key === 'Enter' || event.key === ' ') this.click();">Fleet Dashboard</li>
+                <li tabindex="0" role="button" onkeydown="if(event.key === 'Enter' || event.key === ' ') this.click();">Task Graph</li>
+                <li tabindex="0" role="button" onkeydown="if(event.key === 'Enter' || event.key === ' ') this.click();">Skill Registry</li>
+                <li tabindex="0" role="button" onkeydown="if(event.key === 'Enter' || event.key === ' ') this.click();">System Logs</li>
+                <li tabindex="0" role="button" onkeydown="if(event.key === 'Enter' || event.key === ' ') this.click();">Settings</li>
             </ul>
         </nav>
         <div style="margin-top: auto;">
@@ -51,7 +51,7 @@
         <div class="panel" id="chat-panel" style="grid-column: 1 / -1;">
             <div class="panel-title">Overseer Chat</div>
             <div style="display: flex; gap: 10px;">
-                <input type="text" id="objective-input" placeholder="Enter new high-level objective..." 
+                <input type="text" id="objective-input" aria-label="Enter new high-level objective" placeholder="Enter new high-level objective..."
                        style="flex-grow: 1; padding: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text);"
                        onkeypress="if(event.key === 'Enter') submitObjective()">
                 <button onclick="submitObjective()" 
