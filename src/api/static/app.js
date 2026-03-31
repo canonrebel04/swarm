@@ -17,41 +17,34 @@ const state = new Proxy({
 });
 
 // --- 2. API & WebSocket Handlers ---
-function getApiKey() {
-    let key = localStorage.getItem('swarm_api_key');
-    if (!key) {
-        key = prompt("Please enter the Swarm API Key:");
-        if (key) {
-            localStorage.setItem('swarm_api_key', key);
-        }
-    }
-    return key;
-}
 
 async function authorizedFetch(url, options = {}) {
-    const key = getApiKey();
-    if (!key) {
-        throw new Error("API Key required");
-    }
-
-    options.headers = {
-        ...options.headers,
-        'X-API-Key': key
-    };
-
-    const res = await fetch(url, options);
-
-    if (res.status === 403 || res.status === 500) {
-        localStorage.removeItem('swarm_api_key');
-        const text = await res.text();
-        console.error("API Error:", text);
-        // Retry once with a new prompt
-        if (confirm("API Key invalid or server misconfigured. Enter a new key?")) {
-            return authorizedFetch(url, options);
+    let apiKey = localStorage.getItem('swarm_api_key');
+    if (!apiKey) {
+        apiKey = prompt("Please enter your Swarm API Key:");
+        if (apiKey) {
+            localStorage.setItem('swarm_api_key', apiKey);
+        } else {
+            throw new Error("API Key required");
         }
     }
 
-    return res;
+    const headers = { ...options.headers, 'X-API-Key': apiKey };
+    const response = await fetch(url, { ...options, headers });
+
+    if (response.status === 403) {
+        // Key might be invalid, clear it and prompt again on next request
+        localStorage.removeItem('swarm_api_key');
+        const newKey = prompt("Invalid API Key. Please enter a valid Swarm API Key:");
+        if (newKey) {
+            localStorage.setItem('swarm_api_key', newKey);
+            const newHeaders = { ...options.headers, 'X-API-Key': newKey };
+            return fetch(url, { ...options, headers: newHeaders });
+        }
+        throw new Error("Valid API Key required");
+    }
+
+    return response;
 }
 
 async function fetchInitialState() {
@@ -61,13 +54,11 @@ async function fetchInitialState() {
             authorizedFetch('/api/v1/tasks')
         ]);
         
-        if (agentsRes && tasksRes && agentsRes.ok && tasksRes.ok) {
-            const agentsData = await agentsRes.json();
-            const tasksData  = await tasksRes.json();
-
-            state.agents = agentsData.agents;
-            state.tasks  = tasksData;
-        }
+        const agentsData = await agentsRes.json();
+        const tasksData  = await tasksRes.json();
+        
+        state.agents = agentsData.agents;
+        state.tasks  = tasksData;
     } catch (e) {
         console.error("Initial fetch failed:", e);
     }
@@ -158,15 +149,17 @@ function renderAgentCards() {
 }
 
 async function agentAction(sessionId, action) {
+    if (action === 'kill' && !confirm('Are you sure you want to kill this agent?')) {
+        return;
+    }
+
     try {
         const endpoint = `/api/v1/agents/${sessionId}/${action}`;
         const res = await authorizedFetch(endpoint, {
             method: 'POST'
         });
-        if (res && res.ok) {
-            const data = await res.json();
-            console.log(`Action ${action} result:`, data);
-        }
+        const data = await res.json();
+        console.log(`Action ${action} result:`, data);
     } catch (e) {
         console.error(`Failed to perform ${action}:`, e);
     }
@@ -260,6 +253,5 @@ async function submitObjective() {
         input.focus();
     }
 }
-
 // Bootstrap
 connectWebSocket();
