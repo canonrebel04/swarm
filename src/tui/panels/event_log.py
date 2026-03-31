@@ -4,7 +4,7 @@ from datetime import datetime
 from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Static
-from textual.visual import Visual
+
 from rich.text import Text
 from rich.console import RenderableType
 
@@ -72,6 +72,6 @@ class EventLogPanel(Widget):
             lines.append(f"[{color}]{line}[/{color}]")
         return "\n".join(lines)
     
-    def _render(self) -> Visual:
+    def _render(self):
         """Override _render to delegate to the Static widget"""
         return self.query_one("#event-content", Static).render()

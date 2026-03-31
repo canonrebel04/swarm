@@ -1,0 +1,4 @@
+## 2024-05-24 - Hardcoded API Key and Fail-Closed Posture
+**Vulnerability:** A hardcoded `swarm_dev_key` was present in both `src/api/server.py` and `src/api/static/app.js` as a fallback, and the backend failed open or returned generic errors if the API key environment variable wasn't set.
+**Learning:** Hardcoded dev keys in code can accidentally be deployed to production if environment variables are missed. Relying on fallback values bypasses proper configuration requirements. The backend must enforce fail-closed by verifying configuration at startup or runtime before exposing functionality.
+**Prevention:** Remove all fallback API keys from code. Enforce presence of `SWARM_API_KEY` explicitly. Implement prompt-based or secure storage (like `localStorage`) in frontend rather than static fallbacks in code. Always ensure servers return 500 when misconfigured instead of 403 or functioning with default keys.

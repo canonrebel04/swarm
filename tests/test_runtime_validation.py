@@ -164,7 +164,7 @@ async def test_coordinator_task_decomposition_with_runtimes():
     coordinator = Coordinator()
     
     # This should work since we have runtimes
-    tasks = await coordinator.decompose_task("Implement feature X")
+    tasks = await coordinator.decompose_goal("Implement feature X")
     
     assert len(tasks) > 0
     assert tasks[0].role_required == "scout"

@@ -1,9 +1,12 @@
 import asyncio
 import os
-import paramiko
+import shlex
 from typing import AsyncIterator, Optional
-from .remote_base import RemoteAgentRuntime
+
+import paramiko
+
 from .base import AgentConfig, AgentStatus, RuntimeCapabilities
+from .remote_base import RemoteAgentRuntime
 
 
 class SSHRuntime(RemoteAgentRuntime):
@@ -13,8 +16,8 @@ class SSHRuntime(RemoteAgentRuntime):
 
     def __init__(self) -> None:
         self._ssh_clients: dict[str, paramiko.SSHClient] = {}
-        self._sessions:    dict[str, asyncio.subprocess.Process] = {} # Not used for SSH
-        self._configs:     dict[str, AgentConfig] = {}
+        self._sessions: dict[str, asyncio.subprocess.Process] = {}  # Not used for SSH
+        self._configs: dict[str, AgentConfig] = {}
         self._last_output: dict[str, str] = {}
 
     @property
@@ -36,10 +39,10 @@ class SSHRuntime(RemoteAgentRuntime):
 
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
+
         # Connect using key or agent
         client.connect(config.remote_host, username=config.remote_user)
-        
+
         session_id = f"ssh-{config.name}-{config.remote_host}"
         self._ssh_clients[session_id] = client
         self._configs[session_id] = config
@@ -51,11 +54,17 @@ class SSHRuntime(RemoteAgentRuntime):
 
         # 2. Start agent command (simplified for now)
         # Assuming 'vibe' or other binary is in PATH on remote
-        stdin, stdout, stderr = client.exec_command(f"cd {remote_path} && vibe -p '{config.task}'")
-        
+        safe_remote_path = shlex.quote(remote_path)
+        safe_task = shlex.quote(config.task)
+        stdin, stdout, stderr = client.exec_command(
+            f"cd {safe_remote_path} && vibe -p {safe_task}"
+        )
+
         # We store the channel to read from it in stream_output
-        self._last_output[session_id] = "Connection established. Starting remote agent..."
-        
+        self._last_output[session_id] = (
+            "Connection established. Starting remote agent..."
+        )
+
         return session_id
 
     async def sync_worktree(self, local_path: str, remote_path: str) -> bool:
@@ -68,7 +77,8 @@ class SSHRuntime(RemoteAgentRuntime):
 
     async def stream_output(self, session_id: str) -> AsyncIterator[str]:
         client = self._ssh_clients.get(session_id)
-        if not client: return
+        if not client:
+            return
 
         # In a real implementation, we'd wrap stdout in an async reader
         # For this prototype, we'll yield a mock stream
@@ -83,7 +93,7 @@ class SSHRuntime(RemoteAgentRuntime):
             state="running",
             current_task=config.task if config else "",
             runtime=self.runtime_name,
-            last_output=self._last_output.get(session_id, "")
+            last_output=self._last_output.get(session_id, ""),
         )
 
     async def send_message(self, session_id: str, message: str) -> None:

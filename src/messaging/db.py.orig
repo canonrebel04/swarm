@@ -4,7 +4,7 @@ SQLite database setup for messaging and state management.
 
 import asyncio
 import os
-from typing import Any, Optional
+from typing import Optional
 
 import aiosqlite
 
@@ -95,11 +95,19 @@ class SwarmDB:
             )
         """)
 
-        # ⚡ Bolt Optimization: Composite Index
-        # Replaces separate session_id and timestamp indexes to avoid sorting overhead.
-        # Expected Impact: O(log N) + K lookup for get_messages instead of O(log N) lookup + O(K log K) sort.
+        await self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS resource_locks (
+                resource_path TEXT PRIMARY KEY,
+                swarm_id TEXT NOT NULL,
+                expires_at DATETIME NOT NULL
+            )
+        """)
+
         await self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp ON messages (session_id, timestamp DESC)"
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages (session_id)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages (timestamp DESC)"
         )
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp DESC)"
@@ -147,15 +155,6 @@ class SwarmDB:
 
         return await cursor.fetchall()
 
-    async def get_event_count(self) -> int:
-        """Get total number of events."""
-        if not self._conn:
-            raise RuntimeError("Database not connected")
-
-        cursor = await self._conn.execute("SELECT COUNT(*) FROM events")
-        row = await cursor.fetchone()
-        return row[0] if row else 0
-
     async def create_agent_session(
         self,
         session_id: str,
@@ -170,7 +169,7 @@ class SwarmDB:
 
         await self._conn.execute(
             """
-            INSERT INTO agent_sessions 
+            INSERT INTO agent_sessions
             (session_id, agent_name, role, runtime, state)
             VALUES (?, ?, ?, ?, ?)
             """,
@@ -226,73 +225,21 @@ class SwarmDB:
         )
         await self._conn.commit()
 
-    async def get_recent_events(
-        self,
-        limit: int = 50,
-        since_timestamp: Optional[float] = None,
-        event_types: Optional[list[str]] = None,
-    ) -> list[tuple]:
+    async def get_recent_events(self, limit: int = 50) -> list[tuple]:
         """Get recent events."""
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        query = "SELECT event_type, session_id, agent_name, data, timestamp FROM events"
-        params: list[Any] = []
-        conditions: list[str] = []
+        cursor = await self._conn.execute(
+            """
+            SELECT event_type, session_id, agent_name, data, timestamp
+            FROM events
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
 
-        if since_timestamp is not None:
-            conditions.append("timestamp > ?")
-            params.append(since_timestamp)
-
-        if event_types:
-            placeholders = ",".join(["?"] * len(event_types))
-            conditions.append(f"event_type IN ({placeholders})")
-            params.extend(event_types)
-
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-
-        query += " ORDER BY timestamp DESC LIMIT ?"
-        params.append(limit)
-
-        cursor = await self._conn.execute(query, tuple(params))
-        return await cursor.fetchall()
-
-    async def get_filtered_events(
-        self,
-        since_timestamp: Optional[float] = None,
-        event_types: Optional[list[str]] = None,
-        limit: int = 1000,
-    ) -> list[tuple]:
-        """Get events filtered by timestamp and types, optimized using database querying."""
-        if not self._conn:
-            raise RuntimeError("Database not connected")
-
-        query = "SELECT event_type, session_id, agent_name, data, timestamp FROM events WHERE 1=1"
-        params: list[Any] = []
-
-        if since_timestamp is not None:
-            # ⚡ Bolt Optimization: Convert the float timestamp to SQLite's CURRENT_TIMESTAMP format (UTC).
-            # This enables pushing the timestamp filter to the database layer via string comparison,
-            # drastically reducing I/O and JSON parsing overhead for old events.
-            from datetime import datetime, timezone
-
-            dt_str = datetime.fromtimestamp(since_timestamp, tz=timezone.utc).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-            query += " AND timestamp >= ?"
-            params.append(dt_str)
-
-        # We can definitely filter by event_type in SQL
-        if event_types:
-            placeholders = ",".join("?" for _ in event_types)
-            query += f" AND event_type IN ({placeholders})"
-            params.extend(event_types)
-
-        query += " ORDER BY timestamp DESC LIMIT ?"
-        params.append(limit)
-
-        cursor = await self._conn.execute(query, tuple(params))
         return await cursor.fetchall()
 
     async def register_swarm_instance(self, swarm_id: str, capabilities: str) -> None:
@@ -318,14 +265,11 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        cursor = await self._conn.execute(
-            """
+        cursor = await self._conn.execute(f"""
             SELECT swarm_id, capabilities, last_heartbeat
             FROM swarm_instances
-            WHERE last_heartbeat > datetime('now', '-' || ? || ' seconds')
-            """,
-            (timeout_seconds,),
-        )
+            WHERE last_heartbeat > datetime('now', '-{timeout_seconds} seconds')
+            """)
         return await cursor.fetchall()
 
     async def acquire_lock(
@@ -360,7 +304,7 @@ class SwarmDB:
             if row and row[0] == swarm_id:
                 await self._conn.execute(
                     """
-                    UPDATE resource_locks 
+                    UPDATE resource_locks
                     SET expires_at = datetime('now', '+' || ? || ' seconds')
                     WHERE resource_path = ? AND swarm_id = ?
                     """,
@@ -386,13 +330,13 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        # ⚡ Bolt Optimization: Filter out expired locks in the SELECT query
-        # instead of performing a DELETE write transaction on every read.
-        # This avoids taking an unnecessary SQLite write lock during read-heavy polling
-        # (e.g., coordinator scanning for overlaps).
-        cursor = await self._conn.execute(
-            "SELECT resource_path FROM resource_locks WHERE expires_at >= CURRENT_TIMESTAMP"
+        # First clear expired locks
+        await self._conn.execute(
+            "DELETE FROM resource_locks WHERE expires_at < CURRENT_TIMESTAMP"
         )
+        await self._conn.commit()
+
+        cursor = await self._conn.execute("SELECT resource_path FROM resource_locks")
         rows = await cursor.fetchall()
         return [row[0] for row in rows]
 

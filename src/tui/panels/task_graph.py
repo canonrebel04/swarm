@@ -3,12 +3,12 @@ Task Graph Panel for TUI
 Visualizes task dependencies and execution status.
 """
 
-from textual.app import ComposeResult
-from textual.widgets import Static, Label
-from textual.containers import Vertical, ScrollableContainer
 from rich.table import Table
-from rich.tree import Tree
 from rich.text import Text
+from rich.tree import Tree
+from textual.app import ComposeResult
+from textual.containers import ScrollableContainer, Vertical
+from textual.widgets import Label, Static
 
 
 class TaskGraphPanel(Static):
@@ -35,7 +35,9 @@ class TaskGraphPanel(Static):
         all_tasks = queue + history
 
         if not all_tasks:
-            self.query_one("#graph-content", Static).update("No tasks active.")
+            self.query_one("#graph-content", Static).update(
+                "[dim]No active tasks.[/dim]\n\n[cyan]Type a request in the overseer console to get started.[/cyan]"
+            )
             return
 
         # Simple table view for now, could be upgraded to Tree
@@ -50,7 +52,7 @@ class TaskGraphPanel(Static):
             "ready": "yellow",
             "active": "green",
             "completed": "bright_green",
-            "failed": "bright_red"
+            "failed": "bright_red",
         }
 
         for task in all_tasks:
@@ -59,7 +61,7 @@ class TaskGraphPanel(Static):
             table.add_row(
                 task.title,
                 deps,
-                Text(task.status.upper(), style=f"bold {status_style}")
+                Text(task.status.upper(), style=f"bold {status_style}"),
             )
 
         self.query_one("#graph-content", Static).update(table)
