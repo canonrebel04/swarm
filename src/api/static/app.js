@@ -17,20 +17,57 @@ const state = new Proxy({
 });
 
 // --- 2. API & WebSocket Handlers ---
-const API_KEY = 'swarm_dev_key';
+function getApiKey() {
+    let key = localStorage.getItem('swarm_api_key');
+    if (!key) {
+        key = prompt("Please enter the Swarm API Key:");
+        if (key) {
+            localStorage.setItem('swarm_api_key', key);
+        }
+    }
+    return key;
+}
+
+async function authorizedFetch(url, options = {}) {
+    const key = getApiKey();
+    if (!key) {
+        throw new Error("API Key required");
+    }
+
+    options.headers = {
+        ...options.headers,
+        'X-API-Key': key
+    };
+
+    const res = await fetch(url, options);
+
+    if (res.status === 403 || res.status === 500) {
+        localStorage.removeItem('swarm_api_key');
+        const text = await res.text();
+        console.error("API Error:", text);
+        // Retry once with a new prompt
+        if (confirm("API Key invalid or server misconfigured. Enter a new key?")) {
+            return authorizedFetch(url, options);
+        }
+    }
+
+    return res;
+}
 
 async function fetchInitialState() {
     try {
         const [agentsRes, tasksRes] = await Promise.all([
-            fetch('/api/v1/agents', { headers: { 'X-API-Key': API_KEY } }),
-            fetch('/api/v1/tasks',  { headers: { 'X-API-Key': API_KEY } })
+            authorizedFetch('/api/v1/agents'),
+            authorizedFetch('/api/v1/tasks')
         ]);
         
-        const agentsData = await agentsRes.json();
-        const tasksData  = await tasksRes.json();
-        
-        state.agents = agentsData.agents;
-        state.tasks  = tasksData;
+        if (agentsRes && tasksRes && agentsRes.ok && tasksRes.ok) {
+            const agentsData = await agentsRes.json();
+            const tasksData  = await tasksRes.json();
+
+            state.agents = agentsData.agents;
+            state.tasks  = tasksData;
+        }
     } catch (e) {
         console.error("Initial fetch failed:", e);
     }
@@ -123,12 +160,13 @@ function renderAgentCards() {
 async function agentAction(sessionId, action) {
     try {
         const endpoint = `/api/v1/agents/${sessionId}/${action}`;
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'X-API-Key': API_KEY }
+        const res = await authorizedFetch(endpoint, {
+            method: 'POST'
         });
-        const data = await res.json();
-        console.log(`Action ${action} result:`, data);
+        if (res && res.ok) {
+            const data = await res.json();
+            console.log(`Action ${action} result:`, data);
+        }
     } catch (e) {
         console.error(`Failed to perform ${action}:`, e);
     }
@@ -189,17 +227,18 @@ async function submitObjective() {
     if (!objective) return;
 
     try {
-        const res = await fetch('/api/v1/tasks', {
+        const res = await authorizedFetch('/api/v1/tasks', {
             method: 'POST',
             headers: { 
-                'Content-Type': 'application/json',
-                'X-API-Key': API_KEY 
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({ objective })
         });
-        const data = await res.json();
-        console.log("Objective submitted:", data);
-        input.value = '';
+        if (res && res.ok) {
+            const data = await res.json();
+            console.log("Objective submitted:", data);
+            input.value = '';
+        }
     } catch (e) {
         console.error("Submission failed:", e);
     }
