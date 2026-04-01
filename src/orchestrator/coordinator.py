@@ -219,7 +219,7 @@ class Coordinator:
 
     async def process_task_queue(self):
         """Find and spawn all tasks that are ready for execution."""
-        self._scan_for_overlaps()
+        await self._scan_for_overlaps()
 
         if any(
             t.potential_conflict
@@ -342,19 +342,17 @@ class Coordinator:
     def get_role_priority(self, role: str) -> int:
         return self._role_priority.get(role, 999)
 
-    def _scan_for_overlaps(self):
+    async def _scan_for_overlaps(self):
         """Identify tasks that target the same files and flag them as conflicting."""
         # 1. Check for cross-swarm locks
         try:
             from ..messaging.db import db as swarm_db
 
-            locked_resources = (
-                asyncio.run_coroutine_threadsafe(
-                    swarm_db.get_locked_resources(), asyncio.get_event_loop()
-                )
-                if asyncio.get_event_loop().is_running()
-                else []
-            )
+            # ⚡ Bolt Optimization: Await directly instead of using run_coroutine_threadsafe.
+            # Using run_coroutine_threadsafe inside an already running event loop returns a Future,
+            # which wasn't being awaited, causing a TypeError when trying to iterate over it
+            # and blocking the event loop unnecessarily.
+            locked_resources = await swarm_db.get_locked_resources()
         except RuntimeError:
             locked_resources = []  # DB not ready or running in different context
 
