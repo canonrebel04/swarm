@@ -51,10 +51,10 @@
         <div class="panel" id="chat-panel" style="grid-column: 1 / -1;">
             <div class="panel-title">Overseer Chat</div>
             <div style="display: flex; gap: 10px;">
-                <input type="text" id="objective-input" placeholder="Enter new high-level objective..." 
+                <input type="text" id="objective-input" aria-label="New high-level objective" placeholder="Enter new high-level objective..."
                        style="flex-grow: 1; padding: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text);"
                        onkeypress="if(event.key === 'Enter') submitObjective()">
-                <button onclick="submitObjective()" 
+                <button id="deploy-btn" onclick="submitObjective()"
                         style="padding: 0 25px; border-radius: 6px; border: none; background: var(--primary); color: var(--bg); font-weight: bold; cursor: pointer;">
                     Deploy Swarm
                 </button>

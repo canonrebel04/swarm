@@ -111,10 +111,10 @@ function renderAgentCards() {
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <button onclick="agentAction('${a.session_id}', 'nudge')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--primary); background: transparent; color: var(--primary); cursor: pointer; font-size: 0.8rem;">Nudge</button>
-                <button onclick="agentAction('${a.session_id}', 'pause')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--warn); background: transparent; color: var(--warn); cursor: pointer; font-size: 0.8rem;">Pause</button>
-                <button onclick="agentAction('${a.session_id}', 'retry')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; font-size: 0.8rem;">Retry</button>
-                <button onclick="agentAction('${a.session_id}', 'kill')" style="padding: 6px; border-radius: 4px; border: none; background: var(--error); color: white; cursor: pointer; font-size: 0.8rem; font-weight: bold;">Kill</button>
+                <button aria-label="Nudge agent ${a.name}" onclick="agentAction('${a.session_id}', 'nudge')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--primary); background: transparent; color: var(--primary); cursor: pointer; font-size: 0.8rem;">Nudge</button>
+                <button aria-label="Pause agent ${a.name}" onclick="agentAction('${a.session_id}', 'pause')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--warn); background: transparent; color: var(--warn); cursor: pointer; font-size: 0.8rem;">Pause</button>
+                <button aria-label="Retry agent ${a.name}" onclick="agentAction('${a.session_id}', 'retry')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; font-size: 0.8rem;">Retry</button>
+                <button aria-label="Kill agent ${a.name}" onclick="agentAction('${a.session_id}', 'kill')" style="padding: 6px; border-radius: 4px; border: none; background: var(--error); color: white; cursor: pointer; font-size: 0.8rem; font-weight: bold;">Kill</button>
             </div>
         </div>
     `).join('');
@@ -185,10 +185,15 @@ function renderTaskGraph() {
 
 async function submitObjective() {
     const input = document.getElementById('objective-input');
+    const btn = document.getElementById('deploy-btn');
     const objective = input.value.trim();
     if (!objective) return;
 
     try {
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Deploying...';
+        }
         const res = await fetch('/api/v1/tasks', {
             method: 'POST',
             headers: { 
@@ -202,6 +207,11 @@ async function submitObjective() {
         input.value = '';
     } catch (e) {
         console.error("Submission failed:", e);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Deploy Swarm';
+        }
     }
 }
 
