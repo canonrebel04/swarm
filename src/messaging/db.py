@@ -103,11 +103,11 @@ class SwarmDB:
             )
         """)
 
+        # ⚡ Bolt Optimization: Composite Index
+        # Replaces separate session_id and timestamp indexes to avoid sorting overhead.
+        # Expected Impact: O(log N) + K lookup for get_messages instead of O(log N) lookup + O(K log K) sort.
         await self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages (session_id)"
-        )
-        await self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages (timestamp DESC)"
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp ON messages (session_id, timestamp DESC)"
         )
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp DESC)"
