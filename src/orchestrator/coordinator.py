@@ -358,48 +358,60 @@ class Coordinator:
         except RuntimeError:
             locked_resources = []  # DB not ready or running in different context
 
-        # 2. Local queue scan
-        for i, task_a in enumerate(self._task_queue):
-            if task_a.status in ["completed", "failed"]:
+        locked_set = set(locked_resources)
+
+        # 2. Local queue scan using O(N) inverted index instead of O(N^2) nested loop
+        # Maps file path to the list of tasks modifying it
+        file_to_tasks: Dict[str, List[TaskPacket]] = {}
+
+        for task in self._task_queue:
+            if task.status in ["completed", "failed"]:
                 continue
 
-            a_files = set(task_a.files_in_scope or [])
+            task_files = set(task.files_in_scope or [])
 
             # Check against global locks
-            external_overlap = a_files.intersection(set(locked_resources))
+            external_overlap = task_files.intersection(locked_set)
             if external_overlap:
-                task_a.potential_conflict = True
-                task_a.conflict_details = (
+                task.potential_conflict = True
+                task.conflict_details = (
                     f"File locked by external swarm: {', '.join(external_overlap)}"
                 )
                 if hasattr(self, "_push_event_callback") and self._push_event_callback:
                     self._push_event_callback(
                         "warn",
                         "coordinator",
-                        f"External lock conflict on '{task_a.title}'",
+                        f"External lock conflict on '{task.title}'",
                     )
                 continue
 
-            for task_b in self._task_queue[i + 1 :]:
-                if task_b.status in ["completed", "failed"]:
-                    continue
-                b_files = set(task_b.files_in_scope or [])
-                overlap = a_files.intersection(b_files)
-                if overlap:
-                    task_a.potential_conflict = True
-                    task_b.potential_conflict = True
-                    details = f"Overlap detected on files: {', '.join(overlap)}"
-                    task_a.conflict_details = details
-                    task_b.conflict_details = details
-                    if (
-                        hasattr(self, "_push_event_callback")
-                        and self._push_event_callback
-                    ):
-                        self._push_event_callback(
-                            "warn",
-                            "coordinator",
-                            f"Conflict: '{task_a.title}' vs '{task_b.title}'",
-                        )
+            checked_against = set()
+            for f in task_files:
+                if f in file_to_tasks:
+                    for other_task in file_to_tasks[f]:
+                        if id(other_task) in checked_against:
+                            continue
+                        checked_against.add(id(other_task))
+
+                        overlap = task_files.intersection(set(other_task.files_in_scope or []))
+                        if overlap:
+                            task.potential_conflict = True
+                            other_task.potential_conflict = True
+                            details = f"Overlap detected on files: {', '.join(overlap)}"
+                            task.conflict_details = details
+                            other_task.conflict_details = details
+                            if (
+                                hasattr(self, "_push_event_callback")
+                                and self._push_event_callback
+                            ):
+                                # Log with other_task first to match original ordering
+                                self._push_event_callback(
+                                    "warn",
+                                    "coordinator",
+                                    f"Conflict: '{other_task.title}' vs '{task.title}'",
+                                )
+
+                file_to_tasks.setdefault(f, []).append(task)
 
     def _get_ready_tasks(self) -> List[TaskPacket]:
         ready = []
