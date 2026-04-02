@@ -17,7 +17,6 @@ import yaml
 import shutil
 import os
 
-from ..state import swarm_state
 from ...utils.mistral import fetch_mistral_models, FALLBACK_MODELS as MISTRAL_FALLBACK
 from ...utils.openai import fetch_openai_models, FALLBACK_MODELS as OPENAI_FALLBACK
 from ...utils.ollama import fetch_ollama_models, FALLBACK_MODELS as OLLAMA_FALLBACK

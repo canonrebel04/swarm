@@ -1,0 +1,4 @@
+## 2025-02-28 - Hardcoded API Key and Fail-Open Configuration
+**Vulnerability:** The API server had a hardcoded `swarm_dev_key` fallback, allowing unauthorized access if the environment variable was missing. The frontend also hardcoded this key, leaking it to the client side.
+**Learning:** Hardcoding credentials in fallback parameters circumvents environment-based security entirely, resulting in a fail-open posture when configuration issues occur. Similarly, putting static keys in client-side code completely invalidates their utility.
+**Prevention:** Always implement a fail-closed architecture—if a required security token is missing from the environment, the server should fail to start or reject all requests with a 500 error. Keys should be dynamically requested and stored securely on the client side (e.g., in `localStorage`) rather than embedded in code.

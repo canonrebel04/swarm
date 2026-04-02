@@ -280,7 +280,7 @@ class SwarmApp(App):
         except Exception as e:
             self.push_swarm_event("error", "system", f"Failed to process overseer input: {e}")
     
-    def on_agent_fleet_panel_agent_selected(self, message: AgentFleetPanel.AgentSelected) -> None:
+    def on_agent_fleet_panel_agent_selected(self, message: "AgentFleetPanel.AgentSelected") -> None: # type: ignore
         """Handle agent selection from the fleet panel."""
         self.selected_agent = message.agent_id
         # Update the output panel to show the selected agent's output
