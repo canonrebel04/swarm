@@ -171,6 +171,15 @@ class SwarmDB:
 
         return await cursor.fetchall()
 
+    async def get_event_count(self) -> int:
+        """Get total number of events."""
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+
+        cursor = await self._conn.execute("SELECT COUNT(*) FROM events")
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
     async def create_agent_session(
         self,
         session_id: str,

@@ -201,8 +201,8 @@ class EventBus:
 
     async def get_event_count(self) -> int:
         """Get total number of events."""
-        all_events = await self.db.get_recent_events(limit=999999)
-        return len(all_events)
+        # ⚡ Bolt Optimization: Use optimized database query instead of fetching all records
+        return await self.db.get_event_count()
 
 
 # Global event bus instance
