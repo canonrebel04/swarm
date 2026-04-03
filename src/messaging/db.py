@@ -39,8 +39,7 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
@@ -49,11 +48,9 @@ class SwarmDB:
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 message_type TEXT NOT NULL
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS agent_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT UNIQUE NOT NULL,
@@ -64,11 +61,9 @@ class SwarmDB:
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type TEXT NOT NULL,
@@ -77,11 +72,9 @@ class SwarmDB:
                 data TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS experience_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 role TEXT NOT NULL,
@@ -91,29 +84,24 @@ class SwarmDB:
                 lessons_learned TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS swarm_instances (
                 swarm_id TEXT PRIMARY KEY,
                 last_heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP,
                 capabilities TEXT,
                 status TEXT
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS resource_locks (
                 resource_path TEXT PRIMARY KEY,
                 swarm_id TEXT NOT NULL,
                 expires_at DATETIME NOT NULL
             )
-        """
-        )
+        """)
 
         # ⚡ Bolt: Composite index to optimize `get_messages` query.
         # Allows SQLite to scan the index and return rows in correct order,
@@ -222,13 +210,11 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        cursor = await self._conn.execute(
-            """
+        cursor = await self._conn.execute("""
             SELECT session_id, agent_name, role, runtime, state
             FROM agent_sessions
             ORDER BY updated_at DESC
-            """
-        )
+            """)
 
         return await cursor.fetchall()
 
@@ -293,11 +279,12 @@ class SwarmDB:
             raise RuntimeError("Database not connected")
 
         cursor = await self._conn.execute(
-            f"""
+            """
             SELECT swarm_id, capabilities, last_heartbeat
             FROM swarm_instances
-            WHERE last_heartbeat > datetime('now', '-{timeout_seconds} seconds')
-            """
+            WHERE last_heartbeat > datetime('now', '-' || ? || ' seconds')
+            """,
+            (timeout_seconds,),
         )
         return await cursor.fetchall()
 
