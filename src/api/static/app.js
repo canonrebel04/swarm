@@ -212,8 +212,17 @@ function renderTaskGraph() {
 
 async function submitObjective() {
     const input = document.getElementById('objective-input');
+    const button = document.getElementById('deploy-button');
     const objective = input.value.trim();
     if (!objective) return;
+
+    // Set loading state
+    input.disabled = true;
+    button.disabled = true;
+    const originalText = button.textContent;
+    button.textContent = "Deploying...";
+    button.style.opacity = "0.7";
+    button.style.cursor = "not-allowed";
 
     try {
         const res = await authorizedFetch('/api/v1/tasks', {
@@ -228,6 +237,14 @@ async function submitObjective() {
         input.value = '';
     } catch (e) {
         console.error("Submission failed:", e);
+    } finally {
+        // Restore original state
+        input.disabled = false;
+        button.disabled = false;
+        button.textContent = originalText;
+        button.style.opacity = "1";
+        button.style.cursor = "pointer";
+        input.focus();
     }
 }
 

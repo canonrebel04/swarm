@@ -1,3 +1,3 @@
-## 2024-03-01 - Default Focus in Destructive Modals
-**Learning:** Textual modals do not automatically focus the safest option by default. If a user quickly hits "Enter", they might accidentally trigger the first button (often the destructive one).
-**Action:** Always add an `on_mount` method to `ModalScreen` instances with destructive actions to explicitly `focus()` the safe/cancel button (e.g., `#no-button`).
+## 2025-02-28 - Added missing feedback for Swarm deployment
+**Learning:** The task creation flow in the UI (`Deploy Swarm` button) lacked any visual or interactive feedback, meaning a user on a slow connection could submit multiple tasks rapidly or be unsure if their command was received. Further, the input box was missing an ARIA label, which would be completely opaque to screen-reader navigation context.
+**Action:** Always add loading states to async submission flows. Disable the input field, toggle button text to a loading representation, disable the button pointer events, and make sure it is restored in a `finally` block so the UI gracefully handles connection failures. Also ensure input fields have an associated label or `aria-label`.
