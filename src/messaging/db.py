@@ -293,11 +293,12 @@ class SwarmDB:
             raise RuntimeError("Database not connected")
 
         cursor = await self._conn.execute(
-            f"""
+            """
             SELECT swarm_id, capabilities, last_heartbeat
             FROM swarm_instances
-            WHERE last_heartbeat > datetime('now', '-{timeout_seconds} seconds')
-            """
+            WHERE last_heartbeat > datetime('now', ?)
+            """,
+            (f"-{timeout_seconds} seconds",),
         )
         return await cursor.fetchall()
 
