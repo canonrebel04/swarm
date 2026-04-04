@@ -9,13 +9,13 @@ This module provides a unified event bus that:
 """
 
 import asyncio
+import json
 import time
 import uuid
-from typing import Callable, List, Dict, Any, Optional, AsyncIterator
 from dataclasses import dataclass
-import json
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
-from .db import SwarmDB, DB_PATH
+from .db import DB_PATH, SwarmDB
 
 
 @dataclass
@@ -154,8 +154,13 @@ class EventBus:
         Returns:
             List of Event objects
         """
-        # Use the existing get_recent_events method and filter
-        all_events = await self.db.get_recent_events(limit=1000)
+        # ⚡ Bolt Optimization: Push filtering down to the DB to avoid
+        # fetching and JSON-parsing thousands of events unnecessarily.
+        all_events = await self.db.get_recent_events(
+            limit=1000,
+            since_timestamp=since_timestamp,
+            event_types=event_types,
+        )
 
         events = []
         for row in all_events:
@@ -173,12 +178,6 @@ class EventBus:
                     data={k: v for k, v in event_data.items() if not k.startswith("_")},
                     timestamp=event_data.get("_timestamp", time.time()),
                 )
-
-                # Apply filters
-                if since_timestamp and event.timestamp <= since_timestamp:
-                    continue
-                if event_types and event.event_type not in event_types:
-                    continue
 
                 events.append(event)
 

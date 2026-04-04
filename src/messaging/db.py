@@ -4,7 +4,7 @@ SQLite database setup for messaging and state management.
 
 import asyncio
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import aiosqlite
 
@@ -252,21 +252,36 @@ class SwarmDB:
         )
         await self._conn.commit()
 
-    async def get_recent_events(self, limit: int = 50) -> list[tuple]:
+    async def get_recent_events(
+        self,
+        limit: int = 50,
+        since_timestamp: Optional[float] = None,
+        event_types: Optional[list[str]] = None,
+    ) -> list[tuple]:
         """Get recent events."""
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        cursor = await self._conn.execute(
-            """
-            SELECT event_type, session_id, agent_name, data, timestamp
-            FROM events
-            ORDER BY timestamp DESC
-            LIMIT ?
-            """,
-            (limit,),
-        )
+        query = "SELECT event_type, session_id, agent_name, data, timestamp FROM events"
+        params: list[Any] = []
+        conditions: list[str] = []
 
+        if since_timestamp is not None:
+            conditions.append("timestamp > ?")
+            params.append(since_timestamp)
+
+        if event_types:
+            placeholders = ",".join(["?"] * len(event_types))
+            conditions.append(f"event_type IN ({placeholders})")
+            params.extend(event_types)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        cursor = await self._conn.execute(query, tuple(params))
         return await cursor.fetchall()
 
     async def register_swarm_instance(self, swarm_id: str, capabilities: str) -> None:

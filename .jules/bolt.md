@@ -10,3 +10,6 @@
 ## 2025-03-01 - Optimizing Event Bus Row Counting
 **Learning:** In the event bus system (`src/messaging/event_bus.py`), fetching large datasets entirely into memory to count their size (using `len(await self.db.get_recent_events(limit=999999))`) creates severe latency and memory spikes, slowing down system-wide monitoring.
 **Action:** Always prefer native database aggregations (like `SELECT COUNT(*) FROM events`) over application-side counting for large tables. I refactored `SwarmDB` to include an optimized `get_event_count` query.
+## 2024-04-04 - SQLite JSON filtering overhead
+**Learning:** `EventBus.replay` was fetching `limit=1000` events and parsing their JSON payloads in Python just to discard most of them based on `event_type` and `timestamp`. This caused a major CPU bottleneck and high memory usage.
+**Action:** Always push filtering down to the database level (e.g. `WHERE event_type IN (...) AND timestamp > ?`) using SQL indexes instead of doing in-memory JSON parsing and list filtering in Python.
