@@ -359,8 +359,11 @@ class Coordinator:
         locked_set = set(locked_resources)
 
         # 2. Local queue scan using O(N) inverted index instead of O(N^2) nested loop
-        # Maps file path to the list of tasks modifying it
-        file_to_tasks: Dict[str, List[TaskPacket]] = {}
+        # Maps file path to the list of tuples (TaskPacket, task_files_set) modifying it
+        # ⚡ Bolt Optimization: Pre-compute and store the set representation of `files_in_scope`
+        # for each task in `file_to_tasks`. This avoids performing an unnecessary O(M) set conversion
+        # `set(other_task.files_in_scope or [])` for every single task overlap check inside the loop.
+        file_to_tasks: Dict[str, List[tuple[TaskPacket, set]]] = {}
 
         for task in self._task_queue:
             if task.status in ["completed", "failed"]:
@@ -386,12 +389,12 @@ class Coordinator:
             checked_against = set()
             for f in task_files:
                 if f in file_to_tasks:
-                    for other_task in file_to_tasks[f]:
+                    for other_task, other_task_files in file_to_tasks[f]:
                         if id(other_task) in checked_against:
                             continue
                         checked_against.add(id(other_task))
 
-                        overlap = task_files.intersection(set(other_task.files_in_scope or []))
+                        overlap = task_files.intersection(other_task_files)
                         if overlap:
                             task.potential_conflict = True
                             other_task.potential_conflict = True
@@ -409,7 +412,7 @@ class Coordinator:
                                     f"Conflict: '{other_task.title}' vs '{task.title}'",
                                 )
 
-                file_to_tasks.setdefault(f, []).append(task)
+                file_to_tasks.setdefault(f, []).append((task, task_files))
 
     def _get_ready_tasks(self) -> List[TaskPacket]:
         ready = []
