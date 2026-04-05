@@ -359,13 +359,13 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        # First clear expired locks
-        await self._conn.execute(
-            "DELETE FROM resource_locks WHERE expires_at < CURRENT_TIMESTAMP"
+        # ⚡ Bolt Optimization: Filter out expired locks in the SELECT query
+        # instead of performing a DELETE write transaction on every read.
+        # This avoids taking an unnecessary SQLite write lock during read-heavy polling
+        # (e.g., coordinator scanning for overlaps).
+        cursor = await self._conn.execute(
+            "SELECT resource_path FROM resource_locks WHERE expires_at >= CURRENT_TIMESTAMP"
         )
-        await self._conn.commit()
-
-        cursor = await self._conn.execute("SELECT resource_path FROM resource_locks")
         rows = await cursor.fetchall()
         return [row[0] for row in rows]
 

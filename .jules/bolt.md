@@ -10,3 +10,6 @@
 ## 2025-03-01 - Optimizing Event Bus Row Counting
 **Learning:** In the event bus system (`src/messaging/event_bus.py`), fetching large datasets entirely into memory to count their size (using `len(await self.db.get_recent_events(limit=999999))`) creates severe latency and memory spikes, slowing down system-wide monitoring.
 **Action:** Always prefer native database aggregations (like `SELECT COUNT(*) FROM events`) over application-side counting for large tables. I refactored `SwarmDB` to include an optimized `get_event_count` query.
+\n## 2025-03-01 - Avoid Write Transactions in Read Loops
+**Learning:** Performing a write query (e.g., `DELETE FROM resource_locks WHERE expires_at < CURRENT_TIMESTAMP`) inside a read-heavy method (`get_locked_resources`) creates unnecessary write transactions. This causes SQLite to take write locks during what should be purely read operations, bottlenecking concurrency when polled frequently.
+**Action:** Filter out expired or invalid state in the `SELECT` query itself (e.g., `WHERE expires_at >= CURRENT_TIMESTAMP`) and let dedicated cleanup methods handle the `DELETE`s to maintain optimal read performance.
