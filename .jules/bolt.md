@@ -1,3 +1,6 @@
+## 2025-04-03 - EventBus Replay Filtering Optimization
+**Learning:** Found that filtering large event streams at the application level by querying all records from SQLite and using Python JSON parsing + dict iteration leads to severe overhead and high I/O.
+**Action:** Always push event and type filtering down into the database layer via parameterized SQL queries. Even if SQLite stores timestamps as text making float comparison difficult in pure SQL, filtering by `event_type` (`IN (?, ?)`) directly in SQL removes massive amounts of JSON parsing overhead.
 ## 2024-03-30 - Bolt initialized
 ## 2024-03-30 - Database Index Optimization
 **Learning:** Found that the messaging and state management database uses SQLite but lacks indexes on commonly queried columns. For example, `messages` is queried by `session_id` and sorted by `timestamp`, and `events` is sorted by `timestamp`. Without indexes, these queries will require full table scans, which can become a bottleneck as the SQLite database grows.

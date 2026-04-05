@@ -4,7 +4,7 @@ SQLite database setup for messaging and state management.
 
 import asyncio
 import os
-from typing import Optional
+from typing import Optional, Any
 
 import aiosqlite
 
@@ -39,8 +39,7 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
@@ -49,11 +48,9 @@ class SwarmDB:
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 message_type TEXT NOT NULL
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS agent_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT UNIQUE NOT NULL,
@@ -64,11 +61,9 @@ class SwarmDB:
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type TEXT NOT NULL,
@@ -77,11 +72,9 @@ class SwarmDB:
                 data TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS experience_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 role TEXT NOT NULL,
@@ -91,29 +84,24 @@ class SwarmDB:
                 lessons_learned TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS swarm_instances (
                 swarm_id TEXT PRIMARY KEY,
                 last_heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP,
                 capabilities TEXT,
                 status TEXT
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS resource_locks (
                 resource_path TEXT PRIMARY KEY,
                 swarm_id TEXT NOT NULL,
                 expires_at DATETIME NOT NULL
             )
-        """
-        )
+        """)
 
         # ⚡ Bolt: Composite index to optimize `get_messages` query.
         # Allows SQLite to scan the index and return rows in correct order,
@@ -222,13 +210,11 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        cursor = await self._conn.execute(
-            """
+        cursor = await self._conn.execute("""
             SELECT session_id, agent_name, role, runtime, state
             FROM agent_sessions
             ORDER BY updated_at DESC
-            """
-        )
+            """)
 
         return await cursor.fetchall()
 
@@ -269,6 +255,33 @@ class SwarmDB:
 
         return await cursor.fetchall()
 
+    async def get_filtered_events(self, since_timestamp: Optional[float] = None, event_types: Optional[list[str]] = None, limit: int = 1000) -> list[tuple]:
+        """Get events filtered by timestamp and types, optimized using database querying."""
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+
+        query = "SELECT event_type, session_id, agent_name, data, timestamp FROM events WHERE 1=1"
+        params: list[Any] = []
+
+        if since_timestamp is not None:
+            # We compare against the database timestamp, but our db timestamp is CURRENT_TIMESTAMP (string).
+            # The JSON payload inside 'data' has the exact float timestamp.
+            # However, since SQLite events.timestamp is an ISO string, filtering on it is tricky if since_timestamp is a float.
+            pass
+
+        # Since sqlite timestamp is a string, let's keep Python filtering for since_timestamp
+        # BUT we can definitely filter by event_type in SQL
+        if event_types:
+            placeholders = ",".join("?" for _ in event_types)
+            query += f" AND event_type IN ({placeholders})"
+            params.extend(event_types)
+
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        cursor = await self._conn.execute(query, tuple(params))
+        return await cursor.fetchall()
+
     async def register_swarm_instance(self, swarm_id: str, capabilities: str) -> None:
         """Register or update a swarm instance heartbeat."""
         if not self._conn:
@@ -293,11 +306,12 @@ class SwarmDB:
             raise RuntimeError("Database not connected")
 
         cursor = await self._conn.execute(
-            f"""
+            """
             SELECT swarm_id, capabilities, last_heartbeat
             FROM swarm_instances
-            WHERE last_heartbeat > datetime('now', '-{timeout_seconds} seconds')
-            """
+            WHERE last_heartbeat > datetime('now', '-' || ? || ' seconds')
+            """,
+            (timeout_seconds,),
         )
         return await cursor.fetchall()
 

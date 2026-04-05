@@ -154,14 +154,24 @@ class EventBus:
         Returns:
             List of Event objects
         """
-        # Use the existing get_recent_events method and filter
-        all_events = await self.db.get_recent_events(limit=1000)
+        # ⚡ Bolt Optimization: Use the new get_filtered_events method to filter event_types directly in SQL.
+        # This significantly reduces memory usage, parsing overhead, and database transfer time.
+        all_events = await self.db.get_filtered_events(
+            since_timestamp=since_timestamp, event_types=event_types, limit=1000
+        )
 
         events = []
         for row in all_events:
             try:
                 # Parse the stored JSON data
                 event_data = json.loads(row[3])  # data column
+
+                # The event timestamp stored inside JSON
+                event_timestamp = event_data.get("_timestamp", time.time())
+
+                # Apply timestamp filter (we still do this here since sqlite's event.timestamp is a formatted string)
+                if since_timestamp and event_timestamp <= since_timestamp:
+                    continue
 
                 # Reconstruct the event
                 event = Event(
@@ -171,14 +181,8 @@ class EventBus:
                     session_id=row[1],  # session_id column
                     agent_name=row[2],  # agent_name column
                     data={k: v for k, v in event_data.items() if not k.startswith("_")},
-                    timestamp=event_data.get("_timestamp", time.time()),
+                    timestamp=event_timestamp,
                 )
-
-                # Apply filters
-                if since_timestamp and event.timestamp <= since_timestamp:
-                    continue
-                if event_types and event.event_type not in event_types:
-                    continue
 
                 events.append(event)
 
