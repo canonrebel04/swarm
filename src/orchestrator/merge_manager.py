@@ -30,6 +30,7 @@ class HandoffEvent:
     task_title: str
     worktree_branch: str
     data: dict
+    project_path: Optional[str] = None
 
 
 class MergeManager:
@@ -73,6 +74,7 @@ class MergeManager:
             task_title=data.get("task_title", "unknown"),
             worktree_branch=data.get("worktree_branch", "unknown"),
             data=data,
+            project_path=data.get("project_path"),
         )
 
     async def process_completed_handoff(self, handoff: HandoffEvent) -> None:
