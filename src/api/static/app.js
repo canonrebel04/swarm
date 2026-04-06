@@ -17,13 +17,45 @@ const state = new Proxy({
 });
 
 // --- 2. API & WebSocket Handlers ---
-const API_KEY = 'swarm_dev_key';
+// For MVP, we use a session-based key or prompt if missing.
+// In production, this would be handled by a proper OIDC/OAuth login flow.
+let API_KEY = localStorage.getItem('swarm_api_key') || '';
+
+/**
+ * Generic fetch wrapper with API key injection and re-prompting on failure.
+ */
+async function authorizedFetch(url, options = {}) {
+    const defaultHeaders = { 'X-API-Key': API_KEY };
+    const mergedOptions = {
+        ...options,
+        headers: { ...defaultHeaders, ...options.headers }
+    };
+
+    let response = await fetch(url, mergedOptions);
+
+    // 403: Wrong key, 500: Server has no key configured
+    if (response.status === 403 || response.status === 500) {
+        const msg = response.status === 500
+            ? "Server API Key not configured. Please set SWARM_API_KEY on the server."
+            : "Invalid API Key.";
+
+        const newKey = prompt(`${msg}\nEnter API Key:`);
+        if (newKey) {
+            API_KEY = newKey;
+            localStorage.setItem('swarm_api_key', API_KEY);
+            // Retry with new key
+            mergedOptions.headers['X-API-Key'] = API_KEY;
+            return fetch(url, mergedOptions);
+        }
+    }
+    return response;
+}
 
 async function fetchInitialState() {
     try {
         const [agentsRes, tasksRes] = await Promise.all([
-            fetch('/api/v1/agents', { headers: { 'X-API-Key': API_KEY } }),
-            fetch('/api/v1/tasks',  { headers: { 'X-API-Key': API_KEY } })
+            authorizedFetch('/api/v1/agents'),
+            authorizedFetch('/api/v1/tasks')
         ]);
         
         const agentsData = await agentsRes.json();
@@ -123,10 +155,7 @@ function renderAgentCards() {
 async function agentAction(sessionId, action) {
     try {
         const endpoint = `/api/v1/agents/${sessionId}/${action}`;
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'X-API-Key': API_KEY }
-        });
+        const res = await authorizedFetch(endpoint, { method: 'POST' });
         const data = await res.json();
         console.log(`Action ${action} result:`, data);
     } catch (e) {
@@ -189,12 +218,9 @@ async function submitObjective() {
     if (!objective) return;
 
     try {
-        const res = await fetch('/api/v1/tasks', {
+        const res = await authorizedFetch('/api/v1/tasks', {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'X-API-Key': API_KEY 
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ objective })
         });
         const data = await res.json();
