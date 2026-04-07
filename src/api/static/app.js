@@ -115,7 +115,12 @@ function renderUI(property) {
 function renderAgentCards() {
     const container = document.getElementById('agent-cards-container');
     if (state.agents.length === 0) {
-        container.innerHTML = '<p class="text-dim">No agents active.</p>';
+        container.innerHTML = `
+            <div style="text-align: center; padding: 2rem; color: var(--text-dim);">
+                <div aria-hidden="true" style="font-size: 2.5rem; margin-bottom: 1rem;">🤖</div>
+                <div style="font-weight: bold; margin-bottom: 0.5rem; color: var(--text);">No Active Fleet</div>
+                <div style="font-size: 0.9rem; line-height: 1.4;">Enter a new high-level objective and click <strong style="color: var(--primary);">Deploy Swarm</strong> to awaken the agents.</div>
+            </div>`;
         return;
     }
 
@@ -182,7 +187,12 @@ function renderTaskGraph() {
     const allTasks = [...state.tasks.active, ...state.tasks.queued, ...state.tasks.history];
     
     if (allTasks.length === 0) {
-        container.innerHTML = '<p class="text-dim">No tasks active.</p>';
+        container.innerHTML = `
+            <div style="text-align: center; padding: 2rem; color: var(--text-dim);">
+                <div aria-hidden="true" style="font-size: 2.5rem; margin-bottom: 1rem;">📊</div>
+                <div style="font-weight: bold; margin-bottom: 0.5rem; color: var(--text);">No Tasks Running</div>
+                <div style="font-size: 0.9rem; line-height: 1.4;">Your task graph will appear here once an objective is deployed.</div>
+            </div>`;
         return;
     }
 
