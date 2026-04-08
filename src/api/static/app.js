@@ -256,7 +256,8 @@ async function submitObjective() {
     } finally {
         // Restore original state
         input.disabled = false;
-        button.disabled = false;
+        button.disabled = !input.value.trim(); // Update disabled state based on value
+        button.title = input.value.trim() ? '' : 'Please enter an objective first';
         button.textContent = originalText;
         button.style.opacity = "1";
         button.style.cursor = "pointer";
