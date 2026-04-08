@@ -3,6 +3,9 @@
  */
 
 // --- 1. Reactive State Store ---
+let pendingRenders = new Set();
+let renderScheduled = false;
+
 const state = new Proxy({
     agents: [],
     tasks: { active: [], queued: [], history: [] },
@@ -11,7 +14,20 @@ const state = new Proxy({
 }, {
     set(target, property, value) {
         target[property] = value;
-        renderUI(property);
+        // ⚡ Bolt Optimization: Batch DOM renders using requestAnimationFrame
+        // Prevents layout thrashing and main thread blocking on rapid WebSocket events
+        pendingRenders.add(property);
+        if (!renderScheduled) {
+            renderScheduled = true;
+            requestAnimationFrame(() => {
+                try {
+                    pendingRenders.forEach(prop => renderUI(prop));
+                } finally {
+                    pendingRenders.clear();
+                    renderScheduled = false;
+                }
+            });
+        }
         return true;
     }
 });
@@ -74,13 +90,17 @@ function connectWebSocket() {
         fetchInitialState();
     };
 
+    let fetchDebounceTimeout;
+
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         state.events = [data, ...state.events].slice(0, 100);
         
         // Trigger refresh on significant events
         if (['spawn', 'kill', 'done', 'error', 'delegate_task', 'drift'].includes(data.event_type)) {
-            fetchInitialState();
+            // ⚡ Bolt Optimization: Debounce API requests on bursty WebSocket events
+            clearTimeout(fetchDebounceTimeout);
+            fetchDebounceTimeout = setTimeout(fetchInitialState, 100);
         }
     };
 
