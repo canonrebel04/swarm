@@ -16,3 +16,7 @@
 ## 2024-04-04 - SQLite JSON filtering overhead
 **Learning:** `EventBus.replay` was fetching `limit=1000` events and parsing their JSON payloads in Python just to discard most of them based on `event_type` and `timestamp`. This caused a major CPU bottleneck and high memory usage.
 **Action:** Always push filtering down to the database level (e.g. `WHERE event_type IN (...) AND timestamp > ?`) using SQL indexes instead of doing in-memory JSON parsing and list filtering in Python.
+
+## 2024-04-08 - Vanilla JS Proxy Thrashing
+**Learning:** Using a naive Javascript `Proxy` setter to directly trigger synchronous UI renders causes significant main thread blocking and layout thrashing, especially when bursty events (like rapid WebSocket signals) occur.
+**Action:** Always decouple reactive state updates from synchronous DOM rendering by batching UI changes with `requestAnimationFrame` when using raw Proxies for state management in vanilla JS apps. Furthermore, API requests triggered by rapid state streams should be debounced.
