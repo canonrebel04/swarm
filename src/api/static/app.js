@@ -244,10 +244,18 @@ function renderTaskGraph() {
     container.innerHTML = svgContent;
 }
 
-async function submitObjective() {
+async function submitObjective(event) {
+    if (event) event.preventDefault();
+
     const input = document.getElementById('objective-input');
     const button = document.getElementById('deploy-button');
+    const errorEl = document.getElementById('submit-error');
     const objective = input.value.trim();
+
+    if (errorEl) {
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+    }
     if (!objective) return;
 
     // Set loading state
@@ -270,9 +278,18 @@ async function submitObjective() {
             const data = await res.json();
             console.log("Objective submitted:", data);
             input.value = '';
+        } else {
+            if (errorEl) {
+                errorEl.style.display = 'block';
+                errorEl.textContent = "Failed to submit objective. The server responded with an error.";
+            }
         }
     } catch (e) {
         console.error("Submission failed:", e);
+        if (errorEl) {
+            errorEl.style.display = 'block';
+            errorEl.textContent = "Failed to submit objective. Please check your connection and try again.";
+        }
     } finally {
         // Restore original state
         input.disabled = false;
