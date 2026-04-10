@@ -8,3 +8,6 @@
 ## 2024-05-18 - Semantic HTML Over Custom Event Listeners
 **Learning:** Native keyboard accessibility (like hitting "Enter" to submit an objective) is much more reliably handled by wrapping inputs in a semantic `<form>` with an `onsubmit` handler, rather than manually attaching `onkeypress` event listeners to individual `<div>` or `<input>` tags.
 **Action:** Always refactor isolated input/button pairs into `<form>` tags when handling data submission, and use a `role="alert"` element for displaying inline form errors for screen reader compatibility.
+## 2023-10-27 - Accessible Async Success Feedback in SPAs
+**Learning:** Repurposing existing `role="alert"` containers for success messages provides immediate screen reader feedback without adding new invisible DOM elements. However, it's crucial to manage the color/styling dynamically and ensure the message clears out to prevent confusing state overlaps.
+**Action:** Always consider if an existing ARIA live region can be reused for both error and success states before adding new ones, and ensure clear visual and semantic distinction between state updates.

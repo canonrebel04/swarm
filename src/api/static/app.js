@@ -261,8 +261,13 @@ async function submitObjective(event) {
     // Set loading state
     input.disabled = true;
     button.disabled = true;
-    const originalText = button.textContent;
-    button.textContent = "Deploying...";
+    const originalHTML = button.innerHTML;
+    button.innerHTML = `
+        <svg class="spinner" viewBox="0 0 24 24" style="width: 16px; height: 16px; margin-right: 8px; vertical-align: middle; display: inline-block;">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" stroke-dasharray="32" stroke-linecap="round"></circle>
+        </svg>
+        Deploying...
+    `;
     button.style.opacity = "0.7";
     button.style.cursor = "not-allowed";
 
@@ -278,9 +283,22 @@ async function submitObjective(event) {
             const data = await res.json();
             console.log("Objective submitted:", data);
             input.value = '';
+            if (errorEl) {
+                errorEl.style.display = 'block';
+                errorEl.style.color = 'var(--success)';
+                errorEl.textContent = "✨ Swarm deployed successfully!";
+                setTimeout(() => {
+                    if (errorEl.textContent === "✨ Swarm deployed successfully!") {
+                        errorEl.style.display = 'none';
+                        errorEl.style.color = 'var(--error)';
+                        errorEl.textContent = '';
+                    }
+                }, 3000);
+            }
         } else {
             if (errorEl) {
                 errorEl.style.display = 'block';
+                errorEl.style.color = 'var(--error)';
                 errorEl.textContent = "Failed to submit objective. The server responded with an error.";
             }
         }
@@ -288,6 +306,7 @@ async function submitObjective(event) {
         console.error("Submission failed:", e);
         if (errorEl) {
             errorEl.style.display = 'block';
+            errorEl.style.color = 'var(--error)';
             errorEl.textContent = "Failed to submit objective. Please check your connection and try again.";
         }
     } finally {
@@ -295,7 +314,7 @@ async function submitObjective(event) {
         input.disabled = false;
         button.disabled = !input.value.trim(); // Update disabled state based on value
         button.title = input.value.trim() ? '' : 'Please enter an objective first';
-        button.textContent = originalText;
+        button.innerHTML = originalHTML;
         button.style.opacity = "1";
         button.style.cursor = "pointer";
         input.focus();
