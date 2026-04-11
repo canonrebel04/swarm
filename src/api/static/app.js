@@ -164,18 +164,26 @@ function renderAgentCards() {
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <button aria-label="Nudge agent ${a.name}" onclick="agentAction('${a.session_id}', 'nudge')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--primary); background: transparent; color: var(--primary); cursor: pointer; font-size: 0.8rem;">Nudge</button>
-                <button aria-label="Pause agent ${a.name}" onclick="agentAction('${a.session_id}', 'pause')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--warn); background: transparent; color: var(--warn); cursor: pointer; font-size: 0.8rem;">Pause</button>
-                <button aria-label="Retry agent ${a.name}" onclick="agentAction('${a.session_id}', 'retry')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; font-size: 0.8rem;">Retry</button>
-                <button aria-label="Kill agent ${a.name}" onclick="agentAction('${a.session_id}', 'kill')" style="padding: 6px; border-radius: 4px; border: none; background: var(--error); color: white; cursor: pointer; font-size: 0.8rem; font-weight: bold;">Kill</button>
+                <button aria-label="Nudge agent ${a.name}" onclick="agentAction(event, '${a.session_id}', 'nudge')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--primary); background: transparent; color: var(--primary); cursor: pointer; font-size: 0.8rem;">Nudge</button>
+                <button aria-label="Pause agent ${a.name}" onclick="agentAction(event, '${a.session_id}', 'pause')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--warn); background: transparent; color: var(--warn); cursor: pointer; font-size: 0.8rem;">Pause</button>
+                <button aria-label="Retry agent ${a.name}" onclick="agentAction(event, '${a.session_id}', 'retry')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; font-size: 0.8rem;">Retry</button>
+                <button aria-label="Kill agent ${a.name}" onclick="agentAction(event, '${a.session_id}', 'kill')" style="padding: 6px; border-radius: 4px; border: none; background: var(--error); color: white; cursor: pointer; font-size: 0.8rem; font-weight: bold;">Kill</button>
             </div>
         </div>
     `).join('');
 }
 
-async function agentAction(sessionId, action) {
+async function agentAction(event, sessionId, action) {
     if (action === 'kill' && !confirm('Are you sure you want to kill this agent?')) {
         return;
+    }
+
+    const button = event ? event.currentTarget : null;
+    let originalText = '';
+    if (button) {
+        button.disabled = true;
+        originalText = button.textContent;
+        button.textContent = originalText + '...';
     }
 
     try {
@@ -187,6 +195,11 @@ async function agentAction(sessionId, action) {
         console.log(`Action ${action} result:`, data);
     } catch (e) {
         console.error(`Failed to perform ${action}:`, e);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = originalText;
+        }
     }
 }
 
