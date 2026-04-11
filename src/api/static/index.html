@@ -20,7 +20,7 @@
             </ul>
         </nav>
         <div style="margin-top: auto;">
-            <div id="connection-status" class="badge">Connecting...</div>
+            <div id="connection-status" class="badge" role="status" aria-live="polite">Connecting...</div>
         </div>
     </aside>
 
@@ -60,7 +60,7 @@
             <div class="panel-title">Overseer Chat</div>
             <form onsubmit="submitObjective(event)" style="display: flex; flex-direction: column; gap: 10px;">
                 <div style="display: flex; gap: 10px;">
-                    <input type="text" id="objective-input" aria-label="Enter new high-level objective" placeholder="Enter new high-level objective..." autofocus
+                    <input type="text" id="objective-input" aria-label="Enter new high-level objective" aria-describedby="submit-error" placeholder="Enter new high-level objective..." autofocus
                            style="flex-grow: 1; padding: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text);"
                            oninput="const btn = document.getElementById('deploy-button'); btn.disabled = !this.value.trim(); btn.title = this.value.trim() ? '' : 'Please enter an objective first';">
                     <button type="submit" id="deploy-button" disabled title="Please enter an objective first"

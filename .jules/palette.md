@@ -11,3 +11,7 @@
 ## 2023-10-27 - Accessible Async Success Feedback in SPAs
 **Learning:** Repurposing existing `role="alert"` containers for success messages provides immediate screen reader feedback without adding new invisible DOM elements. However, it's crucial to manage the color/styling dynamically and ensure the message clears out to prevent confusing state overlaps.
 **Action:** Always consider if an existing ARIA live region can be reused for both error and success states before adding new ones, and ensure clear visual and semantic distinction between state updates.
+
+## 2024-05-19 - Async Action Buttons Require Immediate Feedback
+**Learning:** Destructive or state-changing actions in dynamic lists (like killing or nudging an agent) without immediate visual feedback can cause users to click multiple times, leading to duplicate API calls and frustration.
+**Action:** Always wrap async API calls in action buttons with a `try...finally` block that disables the button and updates its text (e.g., adding "...") to give immediate visual confirmation that the request is in flight.
