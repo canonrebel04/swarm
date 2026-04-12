@@ -2,15 +2,16 @@
 Coordinator for decomposing tasks and assigning agents.
 """
 
-from typing import List, Dict, Optional, Any
-from dataclasses import dataclass, field
 import asyncio
+import json
 import os
 import time
-import json
-from ..runtimes.base import AgentConfig, AgentStatus
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+from ..roles.prompts import ROLE_READ_ONLY, ROLE_TOOL_POLICY
 from ..roles.registry import role_registry
-from ..roles.prompts import ROLE_TOOL_POLICY, ROLE_READ_ONLY
+from ..runtimes.base import AgentConfig, AgentStatus
 from .agent_manager import agent_manager
 
 
@@ -28,7 +29,7 @@ class TaskPacket:
     potential_conflict: bool = False
     conflict_details: str = ""
     files_in_scope: List[str] = field(default_factory=list)
-    acceptance_criteria: List[str] = None
+    acceptance_criteria: Optional[List[str]] = None
     parent_agent: Optional[str] = None
     skills: List[str] = field(default_factory=list)
     depends_on: List[str] = field(default_factory=list)
@@ -435,26 +436,39 @@ class Coordinator:
         return ready
 
     def _check_circular_dependencies(self, tasks: List[TaskPacket]) -> bool:
+        # ⚡ Bolt Optimization: Replace recursive DFS with iterative DFS to check for cycles.
+        # This prevents RecursionError on deeply nested dependency graphs and improves performance
+        # by eliminating function call overhead.
         adj = {t.title: t.depends_on for t in tasks}
         visited = set()
-        path = set()
 
-        def has_cycle(v):
-            visited.add(v)
-            path.add(v)
-            for neighbor in adj.get(v, []):
-                if neighbor not in visited:
-                    if has_cycle(neighbor):
+        for start_node in adj:
+            if start_node in visited:
+                continue
+
+            stack = [(start_node, False)]
+            path: set[str] = set()
+
+            while stack:
+                node, is_backtracking = stack.pop()
+
+                if is_backtracking:
+                    path.remove(node)
+                    continue
+
+                if node in visited:
+                    continue
+
+                visited.add(node)
+                path.add(node)
+                stack.append((node, True))
+
+                for neighbor in adj.get(node, []):
+                    if neighbor not in visited:
+                        stack.append((neighbor, False))
+                    elif neighbor in path:
                         return True
-                elif neighbor in path:
-                    return True
-            path.remove(v)
-            return False
 
-        for node in adj:
-            if node not in visited:
-                if has_cycle(node):
-                    return True
         return False
 
     async def resolve_conflicts(self):
