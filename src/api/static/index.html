@@ -63,10 +63,7 @@
                     <input type="text" id="objective-input" aria-label="Enter new high-level objective" aria-describedby="submit-error" placeholder="Enter new high-level objective..." autofocus
                            style="flex-grow: 1; padding: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text);"
                            oninput="const btn = document.getElementById('deploy-button'); btn.disabled = !this.value.trim(); btn.title = this.value.trim() ? '' : 'Please enter an objective first';">
-                    <button type="submit" id="deploy-button" disabled title="Please enter an objective first"
-                            style="padding: 0 25px; border-radius: 6px; border: none; background: var(--primary); color: var(--bg); font-weight: bold; cursor: pointer; transition: opacity 0.2s;"
-                            onmouseover="if(!this.disabled) this.style.opacity=0.9"
-                            onmouseout="if(!this.disabled) this.style.opacity=1">
+                    <button type="submit" id="deploy-button" class="btn btn-primary" disabled title="Please enter an objective first">
                         Deploy Swarm
                     </button>
                 </div>
