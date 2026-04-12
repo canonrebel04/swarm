@@ -144,3 +144,81 @@ header {
 .spinner {
     animation: spin 1s linear infinite;
 }
+
+/* Button Styles */
+.btn {
+    border-radius: 6px;
+    border: none;
+    font-weight: bold;
+    cursor: pointer;
+    transition: opacity 0.2s, background-color 0.2s, transform 0.1s;
+    padding: 10px 25px;
+    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    border-radius: 4px;
+}
+
+.btn:active {
+    transform: scale(0.98);
+}
+
+.btn:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.5 !important;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: var(--bg);
+}
+
+.btn-primary:hover:not(:disabled) {
+    opacity: 0.9;
+}
+
+.btn-outline-primary {
+    border: 1px solid var(--primary);
+    background: transparent;
+    color: var(--primary);
+}
+
+.btn-outline-primary:hover:not(:disabled) {
+    background: rgba(122, 162, 247, 0.1);
+}
+
+.btn-outline-warn {
+    border: 1px solid var(--warn);
+    background: transparent;
+    color: var(--warn);
+}
+
+.btn-outline-warn:hover:not(:disabled) {
+    background: rgba(224, 175, 104, 0.1);
+}
+
+.btn-outline-accent {
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+}
+
+.btn-outline-accent:hover:not(:disabled) {
+    background: rgba(187, 154, 247, 0.1);
+}
+
+.btn-danger {
+    background: var(--error);
+    color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: #d66479; /* A bit darker/different from --error (#f7768e) */
+    opacity: 0.9;
+}
