@@ -39,7 +39,8 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        await self._conn.execute("""
+        await self._conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
@@ -48,9 +49,11 @@ class SwarmDB:
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 message_type TEXT NOT NULL
             )
-        """)
+        """
+        )
 
-        await self._conn.execute("""
+        await self._conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS agent_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT UNIQUE NOT NULL,
@@ -61,9 +64,11 @@ class SwarmDB:
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
 
-        await self._conn.execute("""
+        await self._conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type TEXT NOT NULL,
@@ -72,9 +77,11 @@ class SwarmDB:
                 data TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
 
-        await self._conn.execute("""
+        await self._conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS experience_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 role TEXT NOT NULL,
@@ -84,16 +91,19 @@ class SwarmDB:
                 lessons_learned TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
 
-        await self._conn.execute("""
+        await self._conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS swarm_instances (
                 swarm_id TEXT PRIMARY KEY,
                 last_heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP,
                 capabilities TEXT,
                 status TEXT
             )
-        """)
+        """
+        )
 
         # ⚡ Bolt Optimization: Composite Index
         # Replaces separate session_id and timestamp indexes to avoid sorting overhead.
@@ -198,11 +208,13 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        cursor = await self._conn.execute("""
+        cursor = await self._conn.execute(
+            """
             SELECT session_id, agent_name, role, runtime, state
             FROM agent_sessions
             ORDER BY updated_at DESC
-            """)
+            """
+        )
 
         return await cursor.fetchall()
 
@@ -241,8 +253,16 @@ class SwarmDB:
         conditions: list[str] = []
 
         if since_timestamp is not None:
-            conditions.append("timestamp > ?")
-            params.append(since_timestamp)
+            # ⚡ Bolt Optimization: Convert the float timestamp to SQLite's CURRENT_TIMESTAMP format (UTC).
+            # This enables pushing the timestamp filter to the database layer via string comparison,
+            # drastically reducing I/O and JSON parsing overhead for old events.
+            from datetime import datetime, timezone
+
+            dt_str = datetime.fromtimestamp(since_timestamp, tz=timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            conditions.append("timestamp >= ?")
+            params.append(dt_str)
 
         if event_types:
             placeholders = ",".join(["?"] * len(event_types))
