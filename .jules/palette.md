@@ -15,3 +15,6 @@
 ## 2024-05-19 - Async Action Buttons Require Immediate Feedback
 **Learning:** Destructive or state-changing actions in dynamic lists (like killing or nudging an agent) without immediate visual feedback can cause users to click multiple times, leading to duplicate API calls and frustration.
 **Action:** Always wrap async API calls in action buttons with a `try...finally` block that disables the button and updates its text (e.g., adding "...") to give immediate visual confirmation that the request is in flight.
+## 2024-05-24 - Form Label Association
+**Learning:** For standalone inputs that take up the full width, using an explicit `<label for="...">` with a red required indicator provides much better visual accessibility and context than an off-screen `aria-label`, especially when replacing complex instructions.
+**Action:** Always favor visual `<label>` tags with a `for` attribute over `aria-label` for primary form inputs to ensure both visual users and screen readers understand the required context and status.
