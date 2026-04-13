@@ -23,3 +23,7 @@
 ## 2026-04-12 - SQLite Float Comparison Bug
 **Learning:** In SQLite, comparing a `TEXT` column (which is how `CURRENT_TIMESTAMP` stores dates) to a `REAL`/float parameter often results in the text being considered strictly greater than the number due to type affinity conversion rules. This meant the `timestamp > ?` filter in `get_recent_events` was evaluating to `True` for all rows, causing the database to return the entire table and bypassing index optimization.
 **Action:** Always convert float timestamps to a UTC string in the format `YYYY-MM-DD HH:MM:SS` before using them as parameters for comparison against SQLite `CURRENT_TIMESTAMP` columns. This enables proper lexicographical string comparison at the database layer and utilizes indices correctly.
+
+## 2024-04-13 - SQLite Concurrency Optimization
+**Learning:** The default SQLite setup in `SwarmDB` was causing locking issues during high-volume event logging and agent coordination (due to the synchronous default journal mode). When many async tasks attempt to write to the `events` or `messages` table concurrently, they block each other and readers.
+**Action:** Implemented `PRAGMA journal_mode=WAL;` and `PRAGMA synchronous=NORMAL;` in the database connection initialization to enable non-blocking read/write concurrency and reduce disk I/O wait times.
