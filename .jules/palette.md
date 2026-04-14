@@ -18,3 +18,7 @@
 ## 2024-05-24 - Form Label Association
 **Learning:** For standalone inputs that take up the full width, using an explicit `<label for="...">` with a red required indicator provides much better visual accessibility and context than an off-screen `aria-label`, especially when replacing complex instructions.
 **Action:** Always favor visual `<label>` tags with a `for` attribute over `aria-label` for primary form inputs to ensure both visual users and screen readers understand the required context and status.
+
+## 2024-05-25 - Standardized Async Button Feedback
+**Learning:** While appending "..." to text provides some visual feedback for async buttons, it lacks semantic context for screen readers and can look unpolished. Adding an SVG spinner combined with `aria-busy="true"` provides a robust, accessible, and visually appealing loading state across the application.
+**Action:** Always use a standard SVG spinner and toggle the `aria-busy="true"` attribute on buttons during async operations, ensuring it is cleanly removed in the `finally` block to restore the original state.
