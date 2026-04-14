@@ -6,18 +6,19 @@ and either auto-merges clean work or assigns merger agents for conflicts.
 """
 
 from __future__ import annotations
-import asyncio
-from typing import Dict, List, Optional
-from dataclasses import dataclass
-import json
-import subprocess
-import os
-import time
 
-from .agent_manager import agent_manager
-from .coordinator import Coordinator, TaskPacket
+import asyncio
+import json
+import os
+import subprocess
+import time
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
 from ..messaging.event_bus import event_bus
 from ..worktree.manager import worktree_manager
+from .agent_manager import agent_manager
+from .coordinator import Coordinator, TaskPacket
 
 
 @dataclass
@@ -97,13 +98,16 @@ class MergeManager:
         """Check for conflicts using CodebaseIndex or fallback to advanced check."""
         try:
             from src.memory.codebase_index import CodebaseIndex
+
             index = CodebaseIndex()
             return await index.conflict_check(handoff.worktree_branch)
         except ImportError:
             await event_bus.emit(
                 "warning",
                 "merge-manager",
-                {"message": "CodebaseIndex not available. Falling back to simple conflict check."}
+                {
+                    "message": "CodebaseIndex not available. Falling back to simple conflict check."
+                },
             )
             return await self._advanced_conflict_check(handoff)
 
@@ -127,14 +131,20 @@ class MergeManager:
             # Let's try --write-tree first.
 
             process = await asyncio.create_subprocess_exec(
-                "git", "merge-tree", "--write-tree", "main", "HEAD",
+                "git",
+                "merge-tree",
+                "--write-tree",
+                "main",
+                "HEAD",
                 cwd=worktree_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
 
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=15
+                )
                 # If exit code is 0, no conflicts.
                 # If exit code is non-zero (usually 1), there are conflicts.
                 if process.returncode == 0:
@@ -159,7 +169,7 @@ class MergeManager:
             await event_bus.emit(
                 "warning",
                 "merge-manager",
-                {"message": f"Advanced conflict check failed: {str(e)}"}
+                {"message": f"Advanced conflict check failed: {str(e)}"},
             )
 
         # In case the git version doesn't support --write-tree or it failed,
@@ -168,6 +178,30 @@ class MergeManager:
             conflicts.extend(await self._simple_conflict_check(handoff))
 
         return list(set(conflicts))
+
+    async def _get_git_diff_async(self, worktree_path: str) -> Optional[str]:
+        """Helper to run git diff asynchronously."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "diff",
+                "--name-only",
+                "main...HEAD",
+                cwd=worktree_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10.0)
+            if proc.returncode != 0:
+                return None
+            return stdout.decode().strip()
+        except (asyncio.TimeoutError, Exception):
+            if "proc" in locals() and proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+            return None
 
     async def _simple_conflict_check(self, handoff: HandoffEvent) -> List[str]:
         """Conflict detection using git diff between worktree and main."""
@@ -179,40 +213,38 @@ class MergeManager:
         if not os.path.isdir(worktree_path):
             return conflicts
 
-        try:
-            # Get list of files modified in the worktree branch
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "main...HEAD"],
-                cwd=worktree_path,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            modified_files = [f for f in result.stdout.strip().splitlines() if f]
+        # ⚡ Bolt Optimization: Replaced blocking subprocess.run calls with asyncio.create_subprocess_exec
+        # and asyncio.gather to avoid blocking the event loop and parallelize N+1 I/O-bound git operations
+        # over all active agents' worktrees.
+        diff_output = await self._get_git_diff_async(worktree_path)
+        if diff_output is None:
+            return conflicts
 
-            # Check if those files are also modified by other active agents
-            active_agents = await agent_manager.list_agents()
-            for agent in active_agents:
-                agent_wt = os.path.join(worktree_manager.base_path, agent.name)
-                if not os.path.isdir(agent_wt) or agent_wt == worktree_path:
-                    continue
-                try:
-                    other_result = subprocess.run(
-                        ["git", "diff", "--name-only", "main...HEAD"],
-                        cwd=agent_wt,
-                        capture_output=True,
-                        text=True,
-                        timeout=10,
-                    )
-                    other_files = set(other_result.stdout.strip().splitlines())
+        modified_files = [f for f in diff_output.splitlines() if f]
+        if not modified_files:
+            return conflicts
+
+        # Check if those files are also modified by other active agents
+        active_agents = await agent_manager.list_agents()
+        agent_wts = []
+        for agent in active_agents:
+            agent_wt = os.path.join(worktree_manager.base_path, agent.name)
+            if os.path.isdir(agent_wt) and agent_wt != worktree_path:
+                agent_wts.append(agent_wt)
+
+        # Run all diffs concurrently
+        if agent_wts:
+            diff_results = await asyncio.gather(
+                *[self._get_git_diff_async(wt) for wt in agent_wts],
+                return_exceptions=True,
+            )
+
+            for result in diff_results:
+                if isinstance(result, str) and result:
+                    other_files = set(result.splitlines())
                     overlap = set(modified_files) & other_files
                     if overlap:
                         conflicts.extend(overlap)
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                    continue
-
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            pass
 
         return list(set(conflicts))
 
