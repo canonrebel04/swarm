@@ -22,3 +22,7 @@
 ## 2024-05-25 - Standardized Async Button Feedback
 **Learning:** While appending "..." to text provides some visual feedback for async buttons, it lacks semantic context for screen readers and can look unpolished. Adding an SVG spinner combined with `aria-busy="true"` provides a robust, accessible, and visually appealing loading state across the application.
 **Action:** Always use a standard SVG spinner and toggle the `aria-busy="true"` attribute on buttons during async operations, ensuring it is cleanly removed in the `finally` block to restore the original state.
+
+## 2026-04-15 - Live Event Stream Empty States
+**Learning:** Live event streams (like system logs) that are initially empty can look broken or unpopulated if left completely blank. Users might wonder if the connection failed or if events are simply not happening yet.
+**Action:** Always provide an explicit empty state for live event containers with a helpful message explaining why it's empty (e.g., "Waiting for system events...") and apply appropriate `role="log"` and `aria-live="polite"` attributes to ensure screen readers announce incoming events.
