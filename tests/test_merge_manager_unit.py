@@ -6,7 +6,15 @@ This module tests the merge manager's core logic without event bus dependencies.
 
 import pytest
 import subprocess
-from unittest.mock import Mock, patch, AsyncMock, MagicMock, AsyncMock, AsyncMock, AsyncMock
+from unittest.mock import (
+    Mock,
+    patch,
+    AsyncMock,
+    MagicMock,
+    AsyncMock,
+    AsyncMock,
+    AsyncMock,
+)
 from src.orchestrator.merge_manager import MergeManager, HandoffEvent
 from src.orchestrator.coordinator import Coordinator
 
@@ -26,8 +34,9 @@ def sample_handoff():
             "status": "done",
             "task_title": "Implement authentication",
             "worktree_branch": "feature/auth",
-            "project_path": None
-        })
+            "project_path": None,
+        },
+    )
 
 
 @pytest.fixture
@@ -40,7 +49,7 @@ def mock_coordinator():
 def merge_manager(mock_coordinator):
     """Create a MergeManager instance for testing."""
     # Mock the event bus to prevent actual subscriptions
-    with patch('src.orchestrator.merge_manager.event_bus'):
+    with patch("src.orchestrator.merge_manager.event_bus"):
         manager = MergeManager(mock_coordinator)
         return manager
 
@@ -51,16 +60,16 @@ async def test_handoff_event_parsing(merge_manager, sample_handoff):
     event_data = {
         "data": {
             "from_agent": "agent-scout-1",
-            "to_agent": "agent-builder-1", 
+            "to_agent": "agent-builder-1",
             "status": "done",
             "task_title": "Implement authentication",
             "worktree_branch": "feature/auth",
-            "project_path": None
+            "project_path": None,
         }
     }
-    
+
     parsed = merge_manager._parse_handoff_event(event_data)
-    
+
     assert parsed.from_agent == "agent-scout-1"
     assert parsed.to_agent == "agent-builder-1"
     assert parsed.status == "done"
@@ -72,12 +81,15 @@ async def test_handoff_event_parsing(merge_manager, sample_handoff):
 async def test_merge_task_creation(merge_manager, sample_handoff):
     """Test merge task creation for merger agents."""
     conflicts = ["src/auth.py", "src/config.py", "src/utils.py"]
-    
+
     merge_task = merge_manager._create_merge_task(sample_handoff, conflicts)
-    
+
     # Verify task structure
     assert merge_task.title == "Resolve merge conflicts in Implement authentication"
-    assert "Resolve conflicts in files: src/auth.py, src/config.py, src/utils.py" in merge_task.description
+    assert (
+        "Resolve conflicts in files: src/auth.py, src/config.py, src/utils.py"
+        in merge_task.description
+    )
     assert merge_task.role_required == "merger"
     assert merge_task.runtime_preference == ["mistral-vibe", "openclaw"]
     assert merge_task.priority == "high"
@@ -90,17 +102,13 @@ async def test_merge_completion_handling(merge_manager):
     """Test merge completion event handling."""
     # Add an active merge
     merge_manager.active_merges["Test Task"] = "agent-merger-1"
-    
-    event_data = {
-        "data": {
-            "task_title": "Test Task"
-        }
-    }
-    
+
+    event_data = {"data": {"task_title": "Test Task"}}
+
     # Mock event_bus.emit
-    with patch('src.orchestrator.merge_manager.event_bus.emit'):
+    with patch("src.orchestrator.merge_manager.event_bus.emit"):
         await merge_manager._handle_merge_completion(event_data)
-        
+
         # Should clean up active merges
         assert "Test Task" not in merge_manager.active_merges
 
@@ -108,16 +116,12 @@ async def test_merge_completion_handling(merge_manager):
 @pytest.mark.asyncio
 async def test_edge_case_no_active_merges(merge_manager):
     """Test handling merge completion for non-existent merge."""
-    event_data = {
-        "data": {
-            "task_title": "Non-existent Task"
-        }
-    }
-    
+    event_data = {"data": {"task_title": "Non-existent Task"}}
+
     # Mock emit method
-    with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
+    with patch("src.orchestrator.merge_manager.event_bus.emit", new_callable=AsyncMock):
         await merge_manager._handle_merge_completion(event_data)
-        
+
         # Should not crash
         assert True
 
@@ -126,14 +130,14 @@ async def test_edge_case_no_active_merges(merge_manager):
 async def test_edge_case_multiple_conflicts(merge_manager, sample_handoff):
     """Test handling of multiple conflicts."""
     conflicts = ["file1.py", "file2.py", "file3.py", "file4.py", "file5.py"]
-    
+
     # Mock coordinator
     merge_manager.coordinator.assign_task = AsyncMock(return_value="agent-merger-1")
-    
+
     # Mock emit method
-    with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
+    with patch("src.orchestrator.merge_manager.event_bus.emit", new_callable=AsyncMock):
         await merge_manager._handle_merge_conflicts(sample_handoff, conflicts)
-        
+
         # Should create task with truncated conflict list
         merge_task = merge_manager._create_merge_task(sample_handoff, conflicts)
         assert "file1.py, file2.py, file3.py..." in merge_task.description
@@ -151,11 +155,11 @@ async def test_error_handling_in_handoff(merge_manager):
             # Missing required fields
         }
     }
-    
+
     # Mock emit method
-    with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
+    with patch("src.orchestrator.merge_manager.event_bus.emit", new_callable=AsyncMock):
         await merge_manager._handle_handoff_event(event_data)
-        
+
         # Should not crash
         assert True
 
@@ -167,16 +171,26 @@ async def test_conflict_detection(merge_manager, sample_handoff):
     # Mock CodebaseIndex module
     mock_index = Mock()
     mock_index.conflict_check.return_value = ["src/auth.py", "src/config.py"]
-    
+
     # Mock agent manager
     mock_agent = Mock()
     mock_agent.config.name = "agent-builder-1"
-    
+
     # Mock the import and instantiation
-    with patch.dict('sys.modules', {'src.memory.codebase_index': Mock(CodebaseIndex=Mock(return_value=mock_index))}):
-        with patch('src.orchestrator.agent_manager.agent_manager.list_agents', return_value=[mock_agent]):
+    with patch.dict(
+        "sys.modules",
+        {
+            "src.memory.codebase_index": Mock(
+                CodebaseIndex=Mock(return_value=mock_index)
+            )
+        },
+    ):
+        with patch(
+            "src.orchestrator.agent_manager.agent_manager.list_agents",
+            return_value=[mock_agent],
+        ):
             conflicts = await merge_manager._check_for_conflicts(sample_handoff)
-            
+
             # Should detect conflicts
             assert len(conflicts) == 2
             assert "src/auth.py" in conflicts
@@ -187,28 +201,34 @@ async def test_conflict_detection(merge_manager, sample_handoff):
 async def test_merger_assignment(merge_manager, sample_handoff):
     """Test merger agent assignment for conflicts."""
     conflicts = ["src/auth.py", "src/config.py"]
-    
+
     # Mock coordinator
     merge_manager.coordinator.assign_task = AsyncMock(return_value="agent-merger-1")
-    
+
     # Mock emit method
-    with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
+    with patch("src.orchestrator.merge_manager.event_bus.emit", new_callable=AsyncMock):
         await merge_manager._handle_merge_conflicts(sample_handoff, conflicts)
-        
+
         # Verify merger was assigned
         assert "Implement authentication" in merge_manager.active_merges
-        assert merge_manager.active_merges["Implement authentication"] == "agent-merger-1"
+        assert (
+            merge_manager.active_merges["Implement authentication"] == "agent-merger-1"
+        )
 
 
 @pytest.mark.asyncio
 async def test_simple_conflict_check_fallback(merge_manager, sample_handoff):
     """Test fallback to simple conflict detection when CodebaseIndex unavailable."""
     # Mock the import to raise ImportError
-    with patch.dict('sys.modules', {'src.memory.codebase_index': None}):
-        with patch('src.orchestrator.agent_manager.agent_manager.list_agents', return_value=[]):
-            with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
+    with patch.dict("sys.modules", {"src.memory.codebase_index": None}):
+        with patch(
+            "src.orchestrator.agent_manager.agent_manager.list_agents", return_value=[]
+        ):
+            with patch(
+                "src.orchestrator.merge_manager.event_bus.emit", new_callable=AsyncMock
+            ):
                 conflicts = await merge_manager._check_for_conflicts(sample_handoff)
-                
+
                 # Should return empty list (no conflicts detected in simple mode)
                 assert conflicts == []
 
@@ -220,28 +240,28 @@ async def test_handoff_event_handling(merge_manager):
     event_data = {
         "data": {
             "from_agent": "agent-scout-1",
-            "to_agent": "agent-builder-1", 
+            "to_agent": "agent-builder-1",
             "status": "done",
             "task_title": "Implement authentication",
             "worktree_branch": "feature/auth",
-            "project_path": None
+            "project_path": None,
         }
     }
-    
+
     # Mock process_completed_handoff
-    with patch.object(merge_manager, 'process_completed_handoff'):
+    with patch.object(merge_manager, "process_completed_handoff"):
         # Mock event_bus.emit to prevent actual event emission
-        with patch('src.orchestrator.merge_manager.event_bus.emit'):
+        with patch("src.orchestrator.merge_manager.event_bus.emit"):
             # Since _handle_handoff_event is async, we need to await it
             async def mock_handle(event):
                 pass
-            
+
             merge_manager._handle_handoff_event = mock_handle
             await merge_manager._handle_handoff_event(event_data)
-        
+
         # Should call process_completed_handoff
         merge_manager.process_completed_handoff.assert_called_once()
-        
+
         # Verify the handoff object was created correctly
         handoff_arg = merge_manager.process_completed_handoff.call_args[0][0]
         assert handoff_arg.from_agent == "agent-scout-1"
@@ -252,69 +272,124 @@ async def test_handoff_event_handling(merge_manager):
 async def test_clean_merge_scenario(merge_manager, sample_handoff):
     """Test auto-merge logic without event bus."""
     # Mock the conflict check to return no conflicts
-    with patch.object(merge_manager, '_check_for_conflicts', new_callable=AsyncMock, return_value=[]):
+    with patch.object(
+        merge_manager, "_check_for_conflicts", new_callable=AsyncMock, return_value=[]
+    ):
         # Mock worktree manager
-        with patch('src.orchestrator.merge_manager.worktree_manager') as mock_worktree:
+        with patch("src.orchestrator.merge_manager.worktree_manager") as mock_worktree:
             mock_worktree.base_path = "/tmp/worktree"
-            with patch('os.path.isdir', return_value=True):
-                with patch('src.orchestrator.merge_manager.subprocess.run') as mock_subprocess, patch('os.chdir'):
-                    mock_subprocess.return_value = Mock(stdout="Merge successful", returncode=0)
-                
+            with patch("os.path.isdir", return_value=True):
+                with patch(
+                    "src.orchestrator.merge_manager.asyncio.create_subprocess_exec"
+                ) as mock_subprocess:
+                    mock_process = AsyncMock()
+                    mock_process.communicate.return_value = (b"Merge successful", b"")
+                    mock_process.returncode = 0
+                    mock_subprocess.return_value = mock_process
+
                     # Mock worktree cleanup
-                    with patch.object(merge_manager, '_cleanup_worktree', new_callable=AsyncMock):
-                        with patch.object(merge_manager, '_update_worktree_snapshot', new_callable=AsyncMock):
-                            with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
-                                await merge_manager.process_completed_handoff(sample_handoff)
+                    with patch.object(
+                        merge_manager, "_cleanup_worktree", new_callable=AsyncMock
+                    ):
+                        with patch.object(
+                            merge_manager,
+                            "_update_worktree_snapshot",
+                            new_callable=AsyncMock,
+                        ):
+                            with patch(
+                                "src.orchestrator.merge_manager.event_bus.emit",
+                                new_callable=AsyncMock,
+                            ):
+                                await merge_manager.process_completed_handoff(
+                                    sample_handoff
+                                )
 
                                 # Verify git merge was called correctly
                                 mock_subprocess.assert_called_once()
-                            call_args = mock_subprocess.call_args[0][0]
-                            assert call_args[0] == "git"
-                            assert call_args[1] == "merge"
-                            assert call_args[2] == "--no-ff"
-                            assert call_args[3] == "-m"
-                            assert call_args[4] == "Auto-merge: Implement authentication"
-                            assert call_args[5] == "main"
+                                call_args = mock_subprocess.call_args[0]
+                                assert call_args[0] == "git"
+                                assert call_args[1] == "merge"
+                                assert call_args[2] == "--no-ff"
+                                assert call_args[3] == "-m"
+                                assert (
+                                    call_args[4]
+                                    == "Auto-merge: Implement authentication"
+                                )
+                                assert call_args[5] == "main"
 
 
 @pytest.mark.asyncio
 async def test_auto_merge_failure_fallback(merge_manager, sample_handoff):
     """Test fallback to manual merge when auto-merge fails."""
     # Mock conflict check to return no conflicts initially
-    with patch.object(merge_manager, '_check_for_conflicts', new_callable=AsyncMock, return_value=[]):
+    with patch.object(
+        merge_manager, "_check_for_conflicts", new_callable=AsyncMock, return_value=[]
+    ):
         # Mock worktree manager
-        with patch('src.orchestrator.merge_manager.worktree_manager') as mock_worktree:
+        with patch("src.orchestrator.merge_manager.worktree_manager") as mock_worktree:
             mock_worktree.base_path = "/tmp/worktree"
-            with patch('os.path.isdir', return_value=True):
-                with patch('src.orchestrator.merge_manager.subprocess.run') as mock_subprocess, patch('os.chdir'):
-                    mock_subprocess.side_effect = subprocess.CalledProcessError(1, 'git', output="Conflict detected")
-                
+            with patch("os.path.isdir", return_value=True):
+                with patch(
+                    "src.orchestrator.merge_manager.asyncio.create_subprocess_exec"
+                ) as mock_subprocess:
+                    mock_process = AsyncMock()
+                    mock_process.communicate.return_value = (b"Conflict detected", b"")
+                    mock_process.returncode = 1
+                    mock_subprocess.return_value = mock_process
+
                     # Mock conflict handling
-                    with patch.object(merge_manager, '_handle_merge_conflicts', new_callable=AsyncMock):
-                        with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
-                            await merge_manager.process_completed_handoff(sample_handoff)
+                    with patch.object(
+                        merge_manager, "_handle_merge_conflicts", new_callable=AsyncMock
+                    ):
+                        with patch(
+                            "src.orchestrator.merge_manager.event_bus.emit",
+                            new_callable=AsyncMock,
+                        ):
+                            await merge_manager.process_completed_handoff(
+                                sample_handoff
+                            )
 
                             # Should fall back to manual merge
                             merge_manager._handle_merge_conflicts.assert_called_once()
-                        call_args = merge_manager._handle_merge_conflicts.call_args[0]
-                        assert call_args[0] == sample_handoff
-                        assert "merge_failed" in call_args[1]
+                            call_args = merge_manager._handle_merge_conflicts.call_args[
+                                0
+                            ]
+                            assert call_args[0] == sample_handoff
+                            assert "merge_failed" in call_args[1]
 
 
 @pytest.mark.asyncio
 async def test_edge_case_empty_conflicts(merge_manager, sample_handoff):
     """Test handling of empty conflicts list."""
-    with patch.object(merge_manager, '_check_for_conflicts', new_callable=AsyncMock, return_value=[]):
-        with patch('src.orchestrator.merge_manager.worktree_manager') as mock_worktree:
+    with patch.object(
+        merge_manager, "_check_for_conflicts", new_callable=AsyncMock, return_value=[]
+    ):
+        with patch("src.orchestrator.merge_manager.worktree_manager") as mock_worktree:
             mock_worktree.base_path = "/tmp/worktree"
-            with patch('os.path.isdir', return_value=True):
-                with patch('src.orchestrator.merge_manager.subprocess.run') as mock_subprocess, patch('os.chdir'):
-                    mock_subprocess.return_value = Mock(stdout="Merge successful", returncode=0)
+            with patch("os.path.isdir", return_value=True):
+                with patch(
+                    "src.orchestrator.merge_manager.asyncio.create_subprocess_exec"
+                ) as mock_subprocess:
+                    mock_process = AsyncMock()
+                    mock_process.communicate.return_value = (b"Merge successful", b"")
+                    mock_process.returncode = 0
+                    mock_subprocess.return_value = mock_process
 
-                    with patch.object(merge_manager, '_cleanup_worktree', new_callable=AsyncMock):
-                        with patch.object(merge_manager, '_update_worktree_snapshot', new_callable=AsyncMock):
-                            with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
-                                await merge_manager.process_completed_handoff(sample_handoff)
+                    with patch.object(
+                        merge_manager, "_cleanup_worktree", new_callable=AsyncMock
+                    ):
+                        with patch.object(
+                            merge_manager,
+                            "_update_worktree_snapshot",
+                            new_callable=AsyncMock,
+                        ):
+                            with patch(
+                                "src.orchestrator.merge_manager.event_bus.emit",
+                                new_callable=AsyncMock,
+                            ):
+                                await merge_manager.process_completed_handoff(
+                                    sample_handoff
+                                )
 
                                 # Should proceed with auto-merge
                                 mock_subprocess.assert_called_once()
@@ -323,11 +398,16 @@ async def test_edge_case_empty_conflicts(merge_manager, sample_handoff):
 @pytest.mark.asyncio
 async def test_edge_case_missing_worktree(merge_manager, sample_handoff):
     """Test handling of missing worktree."""
-    with patch.object(merge_manager, '_check_for_conflicts', new_callable=AsyncMock, return_value=[]):
-        with patch('src.orchestrator.merge_manager.worktree_manager') as mock_worktree:
+    with patch.object(
+        merge_manager, "_check_for_conflicts", new_callable=AsyncMock, return_value=[]
+    ):
+        with patch("src.orchestrator.merge_manager.worktree_manager") as mock_worktree:
             mock_worktree.base_path = "/tmp/worktree"
-            with patch('os.path.isdir', return_value=False):
-                with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
+            with patch("os.path.isdir", return_value=False):
+                with patch(
+                    "src.orchestrator.merge_manager.event_bus.emit",
+                    new_callable=AsyncMock,
+                ):
                     await merge_manager.process_completed_handoff(sample_handoff)
 
                     # Should not crash
@@ -338,17 +418,28 @@ async def test_edge_case_missing_worktree(merge_manager, sample_handoff):
 @pytest.mark.skip(reason="Mocking artifact")
 async def test_edge_case_subprocess_error(merge_manager, sample_handoff):
     """Test handling of subprocess errors during merge."""
-    with patch.object(merge_manager, '_check_for_conflicts', new_callable=AsyncMock, return_value=[]):
-        with patch('src.orchestrator.merge_manager.worktree_manager') as mock_worktree:
+    with patch.object(
+        merge_manager, "_check_for_conflicts", new_callable=AsyncMock, return_value=[]
+    ):
+        with patch("src.orchestrator.merge_manager.worktree_manager") as mock_worktree:
             mock_worktree.base_path = "/tmp/worktree"
-            with patch('os.path.isdir', return_value=True):
-                with patch('src.orchestrator.merge_manager.subprocess.run') as mock_subprocess, patch('os.chdir'):
+            with patch("os.path.isdir", return_value=True):
+                with patch(
+                    "src.orchestrator.merge_manager.subprocess.run"
+                ) as mock_subprocess, patch("os.chdir"):
                     mock_subprocess.side_effect = Exception("Unexpected error")
 
-                    with patch.object(merge_manager, '_handle_merge_conflicts', new_callable=AsyncMock):
-                        with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
-                            await merge_manager.process_completed_handoff(sample_handoff)
-                        
+                    with patch.object(
+                        merge_manager, "_handle_merge_conflicts", new_callable=AsyncMock
+                    ):
+                        with patch(
+                            "src.orchestrator.merge_manager.event_bus.emit",
+                            new_callable=AsyncMock,
+                        ):
+                            await merge_manager.process_completed_handoff(
+                                sample_handoff
+                            )
+
                         # Should fall back to manual merge
                         merge_manager._handle_merge_conflicts.assert_called_once()
 
@@ -356,14 +447,10 @@ async def test_edge_case_subprocess_error(merge_manager, sample_handoff):
 @pytest.mark.asyncio
 async def test_edge_case_no_active_merges(merge_manager):
     """Test handling merge completion for non-existent merge."""
-    event_data = {
-        "data": {
-            "task_title": "Non-existent Task"
-        }
-    }
-    
-    with patch('src.orchestrator.merge_manager.event_bus.emit', new_callable=AsyncMock):
+    event_data = {"data": {"task_title": "Non-existent Task"}}
+
+    with patch("src.orchestrator.merge_manager.event_bus.emit", new_callable=AsyncMock):
         await merge_manager._handle_merge_completion(event_data)
-        
+
         # Should not emit any events or crash
         assert True
