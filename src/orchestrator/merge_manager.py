@@ -336,33 +336,32 @@ class MergeManager:
                     f"Worktree {handoff.worktree_branch} not found at {worktree_path}"
                 )
 
-            # Change to worktree directory
-            original_dir = os.getcwd()
-            os.chdir(worktree_path)
+            # ⚡ Bolt Optimization: Replace os.chdir and blocking subprocess.run with cwd and asyncio.create_subprocess_exec
+            # This avoids blocking the async event loop and prevents race conditions from mutating global process state (os.chdir).
+            process = await asyncio.create_subprocess_exec(
+                "git",
+                "merge",
+                "--no-ff",
+                "-m",
+                f"Auto-merge: {handoff.task_title}",
+                "main",
+                cwd=worktree_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
 
-            try:
-                # Perform the merge
-                result = subprocess.run(
-                    [
-                        "git",
-                        "merge",
-                        "--no-ff",
-                        "-m",
-                        f"Auto-merge: {handoff.task_title}",
-                        "main",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
+            stdout, stderr = await process.communicate()
+            stdout_str = stdout.decode()
+            stderr_str = stderr.decode()
 
+            if process.returncode == 0:
                 await event_bus.emit(
                     "merge_success",
                     "merge-manager",
                     {
                         "task_title": handoff.task_title,
                         "worktree": handoff.worktree_branch,
-                        "merge_output": result.stdout,
+                        "merge_output": stdout_str,
                     },
                 )
 
@@ -371,14 +370,18 @@ class MergeManager:
 
                 # Cleanup worktree after successful merge
                 await self._cleanup_worktree(handoff)
-
-            finally:
-                os.chdir(original_dir)
+            else:
+                raise subprocess.CalledProcessError(
+                    process.returncode or 1,
+                    ["git", "merge"],
+                    output=stdout_str,
+                    stderr=stderr_str,
+                )
 
         except subprocess.CalledProcessError as e:
             # Extract conflicting files from git output
             conflicting_files = []
-            for line in e.stdout.split("\n"):
+            for line in (e.stdout or "").split("\n"):
                 if line.startswith("CONFLICT"):
                     parts = line.split(":")
                     if len(parts) > 1:
@@ -417,14 +420,29 @@ class MergeManager:
             if not os.path.isdir(worktree_path):
                 return
 
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "main...HEAD"],
+            # ⚡ Bolt Optimization: Replace blocking subprocess.run with asyncio.create_subprocess_exec
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "diff",
+                "--name-only",
+                "main...HEAD",
                 cwd=worktree_path,
-                capture_output=True,
-                text=True,
-                timeout=10,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            modified_files = [f for f in result.stdout.strip().splitlines() if f]
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return
+
+            if proc.returncode != 0:
+                return
+
+            modified_files = [f for f in stdout.decode().strip().splitlines() if f]
 
             await event_bus.emit(
                 "info",
@@ -434,7 +452,7 @@ class MergeManager:
                     "files": modified_files,
                 },
             )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, Exception):
+        except Exception:
             pass
 
     async def _cleanup_worktree(self, handoff: HandoffEvent) -> None:
