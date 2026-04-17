@@ -113,7 +113,7 @@ class MergeManager:
 
     async def _advanced_conflict_check(self, handoff: HandoffEvent) -> List[str]:
         """Check for conflicts using git merge-tree."""
-        conflicts = []
+        conflicts: List[str] = []
         worktree_path = os.path.join(
             worktree_manager.base_path, handoff.worktree_branch
         )
@@ -205,7 +205,7 @@ class MergeManager:
 
     async def _simple_conflict_check(self, handoff: HandoffEvent) -> List[str]:
         """Conflict detection using git diff between worktree and main."""
-        conflicts = []
+        conflicts: List[str] = []
         worktree_path = os.path.join(
             worktree_manager.base_path, handoff.worktree_branch
         )
@@ -239,10 +239,14 @@ class MergeManager:
                 return_exceptions=True,
             )
 
+            # ⚡ Bolt Optimization: Extracted `set(modified_files)` out of the loop
+            # to avoid redundant O(N) operations and improve performance when processing large file lists.
+            modified_files_set = set(modified_files)
+
             for result in diff_results:
                 if isinstance(result, str) and result:
                     other_files = set(result.splitlines())
-                    overlap = set(modified_files) & other_files
+                    overlap = modified_files_set & other_files
                     if overlap:
                         conflicts.extend(overlap)
 
