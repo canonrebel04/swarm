@@ -159,7 +159,7 @@ function renderAgentCards() {
                 <span style="font-size: 0.85rem; font-weight: bold; letter-spacing: 0.05em;">${a.state.toUpperCase()}</span>
             </div>
 
-            <div style="font-size: 0.85rem; margin-bottom: 15px; color: var(--text); line-height: 1.4; background: var(--bg); padding: 8px; border-radius: 4px; border-left: 3px solid var(--accent);">
+            <div title="${a.current_task.replace(/"/g, '&quot;')}" style="font-size: 0.85rem; margin-bottom: 15px; color: var(--text); line-height: 1.4; background: var(--bg); padding: 8px; border-radius: 4px; border-left: 3px solid var(--accent); cursor: help;">
                 ${a.current_task.substring(0, 120)}${a.current_task.length > 120 ? '...' : ''}
             </div>
 
@@ -252,7 +252,7 @@ function renderTaskGraph() {
     const spacing = 20;
     const svgHeight = allTasks.length * (nodeHeight + spacing);
     
-    let svgContent = `<svg width="100%" height="${svgHeight}" style="max-width: ${nodeWidth}px;">`;
+    let svgContent = `<svg width="100%" height="${svgHeight}" style="max-width: ${nodeWidth}px;" role="group" aria-label="Task Dependency Graph">`;
     
     allTasks.forEach((task, i) => {
         const y = i * (nodeHeight + spacing);
@@ -262,10 +262,14 @@ function renderTaskGraph() {
         if (task.status === 'failed') color = 'var(--error)';
         if (task.status === 'ready') color = 'var(--warn)';
 
+        const titleSafe = task.title.replace(/"/g, '&quot;');
+        const truncatedTitle = task.title.length > 25 ? task.title.substring(0, 25) + '...' : task.title;
+
         svgContent += `
-            <g class="task-node" data-id="${task.id}">
+            <g class="task-node" data-id="${task.id}" tabindex="0" role="group" aria-label="Task: ${titleSafe}, Status: ${task.status}">
+                <title>${titleSafe}</title>
                 <rect x="0" y="${y}" width="${nodeWidth}" height="${nodeHeight}" rx="4" fill="var(--bg)" stroke="${color}" stroke-width="2" />
-                <text x="10" y="${y + 25}" fill="${color}" font-size="12" font-family="monospace">${task.title.substring(0, 25)}</text>
+                <text x="10" y="${y + 25}" fill="${color}" font-size="12" font-family="monospace">${truncatedTitle}</text>
             </g>
         `;
     });
