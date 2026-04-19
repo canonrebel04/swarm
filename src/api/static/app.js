@@ -262,8 +262,10 @@ function renderTaskGraph() {
         if (task.status === 'failed') color = 'var(--error)';
         if (task.status === 'ready') color = 'var(--warn)';
 
+        const safeTitle = task.title.replace(/"/g, '&quot;');
         svgContent += `
-            <g class="task-node" data-id="${task.id}">
+            <g class="task-node" data-id="${task.id}" tabindex="0" role="group" aria-label="Task: ${safeTitle}, Status: ${task.status}">
+                <title>${safeTitle}</title>
                 <rect x="0" y="${y}" width="${nodeWidth}" height="${nodeHeight}" rx="4" fill="var(--bg)" stroke="${color}" stroke-width="2" />
                 <text x="10" y="${y + 25}" fill="${color}" font-size="12" font-family="monospace">${task.title.substring(0, 25)}</text>
             </g>
