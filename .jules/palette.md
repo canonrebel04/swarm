@@ -26,3 +26,6 @@
 ## 2026-04-15 - Live Event Stream Empty States
 **Learning:** Live event streams (like system logs) that are initially empty can look broken or unpopulated if left completely blank. Users might wonder if the connection failed or if events are simply not happening yet.
 **Action:** Always provide an explicit empty state for live event containers with a helpful message explaining why it's empty (e.g., "Waiting for system events...") and apply appropriate `role="log"` and `aria-live="polite"` attributes to ensure screen readers announce incoming events.
+## 2024-05-26 - Accessible SVG Interactive Nodes
+**Learning:** When building custom interactive data visualizations using SVG (like a DAG), simply rendering <rect> and <text> elements creates black boxes for screen readers and keyboard users. Native tooltips are also missing for truncated text within SVGs.
+**Action:** Always wrap interactive SVG components in a <g> (group) element and apply tabindex="0", role="group", and an explicit aria-label. Additionally, insert a <title> element inside the <g> to provide native browser tooltips for truncated or supplementary information.
