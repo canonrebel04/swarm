@@ -239,10 +239,13 @@ class MergeManager:
                 return_exceptions=True,
             )
 
+            # ⚡ Bolt Optimization: Calculate set(modified_files) once outside the loop
+            # to avoid O(N) list-to-set conversion on every iteration over other agents' worktrees.
+            modified_files_set = set(modified_files)
             for result in diff_results:
                 if isinstance(result, str) and result:
                     other_files = set(result.splitlines())
-                    overlap = set(modified_files) & other_files
+                    overlap = modified_files_set & other_files
                     if overlap:
                         conflicts.extend(overlap)
 
