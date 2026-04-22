@@ -88,7 +88,8 @@ def run_setup() -> None:
 
 
 async def _run_setup_async() -> None:
-    os.system("clear")
+    # Clear screen using ANSI escape sequences (safer than os.system)
+    print("\033[H\033[2J", end="", flush=True)
     print(_cyan("╔══════════════════════════════════════════════════════╗"))
     print(_cyan("║") + _bold("        🤖  Swarm — Model & Provider Setup          ") + _cyan("║"))
     print(_cyan("╚══════════════════════════════════════════════════════╝"))
