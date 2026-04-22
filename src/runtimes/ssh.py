@@ -38,7 +38,7 @@ class SSHRuntime(RemoteAgentRuntime):
             raise ValueError("remote_host is required for SSHRuntime")
 
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.load_system_host_keys()
 
         # Connect using key or agent
         client.connect(config.remote_host, username=config.remote_user)
