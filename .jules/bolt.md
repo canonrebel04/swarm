@@ -36,3 +36,6 @@
 ## 2026-04-17 - Redundant Set Instantiations in List Intersections
 **Learning:** Instantiating `set(list_a)` repeatedly inside a loop when doing intersection checks against `list_b`, `list_c`, etc., creates redundant O(N) operations in every iteration, drastically reducing performance when processing large arrays (like git diff outputs across many agents).
 **Action:** When performing set intersections or lookups on large lists inside a loop, ensure the static list is converted to a `set` object once *outside* the loop to optimize memory and CPU cycles.
+## 2024-05-18 - Avoid Holding asyncio.Lock Across I/O Boundaries
+**Learning:** Found that `AgentManager` was holding `self._lock` while awaiting long-running runtime operations (e.g., `await agent_info.runtime_instance.get_status(...)`, `kill(...)`, `send_message(...)`). Because a single lock protects the entire `_agents` dictionary, this blocked all other agent management tasks across the entire system until the I/O resolved, destroying concurrency.
+**Action:** Always fetch state from shared dictionaries inside a lock block, immediately release the lock, and perform slow I/O (like awaiting network calls or external processes) *outside* the lock. Re-acquire the lock only when writing state back.

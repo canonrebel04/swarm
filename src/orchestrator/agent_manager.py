@@ -2,11 +2,12 @@
 Agent manager for tracking and managing active agents.
 """
 
-from typing import Dict, List, Optional, AsyncIterator
-from dataclasses import dataclass
 import asyncio
 import uuid
-from ..runtimes.base import AgentConfig, AgentStatus
+from dataclasses import dataclass
+from typing import AsyncIterator, Dict, List, Optional
+
+from ..runtimes.base import AgentConfig, AgentRuntime, AgentStatus
 from ..runtimes.registry import registry
 from ..safety.anti_drift import anti_drift_monitor
 
@@ -14,10 +15,11 @@ from ..safety.anti_drift import anti_drift_monitor
 @dataclass
 class AgentInfo:
     """Information about an active agent."""
+
     session_id: str
     config: AgentConfig
     status: AgentStatus
-    runtime_instance: object
+    runtime_instance: AgentRuntime
     created_at: float
     last_updated: float
 
@@ -47,20 +49,20 @@ class AgentManager:
     async def spawn_agent(self, config: AgentConfig) -> str:
         """
         Spawn a new agent with the given configuration.
-        
+
         Args:
             config: Agent configuration
-            
+
         Returns:
             session_id: Unique identifier for the agent session
         """
         runtime_class = registry.get(config.runtime)
         if not runtime_class:
             raise ValueError(f"Runtime {config.runtime} not found")
-        
+
         runtime_instance = runtime_class()
         session_id = await runtime_instance.spawn(config)
-        
+
         # Create agent info
         agent_info = AgentInfo(
             session_id=session_id,
@@ -72,32 +74,32 @@ class AgentManager:
                 current_task=config.task,
                 runtime=config.runtime,
                 last_output="",
-                pid=None
+                pid=None,
             ),
             runtime_instance=runtime_instance,
             created_at=asyncio.get_event_loop().time(),
-            last_updated=asyncio.get_event_loop().time()
+            last_updated=asyncio.get_event_loop().time(),
         )
-        
+
         async with self._lock:
             self._agents[session_id] = agent_info
-        
+
         # Call spawn callbacks
         for callback in self._on_spawn_callbacks:
             try:
                 callback(agent_info.status)
             except Exception:
                 pass  # Don't let callback failures break the spawn
-        
+
         return session_id
 
     async def get_agent_status(self, session_id: str) -> Optional[AgentStatus]:
         """
         Get the current status of an agent.
-        
+
         Args:
             session_id: Agent session identifier
-            
+
         Returns:
             Current agent status or None if not found
         """
@@ -105,37 +107,43 @@ class AgentManager:
             agent_info = self._agents.get(session_id)
             if not agent_info:
                 return None
-            
-            # Get fresh status from runtime
-            try:
-                fresh_status = await agent_info.runtime_instance.get_status(session_id)
-                
+
+        # Get fresh status from runtime
+        try:
+            # ⚡ Bolt Optimization: Perform slow I/O out of the lock block
+            fresh_status = await agent_info.runtime_instance.get_status(session_id)
+
+            async with self._lock:
+                # Need to re-check if it's still in the dict
+                if session_id not in self._agents:
+                    return fresh_status
+
                 # Check if state actually changed
                 state_changed = fresh_status.state != agent_info.status.state
-                
+
                 agent_info.status = fresh_status
                 agent_info.last_updated = asyncio.get_event_loop().time()
-                
-                # Call state change callbacks if state changed
-                if state_changed:
-                    for callback in self._on_state_change_callbacks:
-                        try:
-                            callback(fresh_status)
-                        except Exception:
-                            pass  # Don't let callback failures break status updates
-                
-                return fresh_status
-            except Exception:
-                return agent_info.status
+
+            # Call state change callbacks if state changed (outside lock to prevent blocking if callback is slow)
+            if state_changed:
+                for callback in self._on_state_change_callbacks:
+                    try:
+                        callback(fresh_status)
+                    except Exception:
+                        pass  # Don't let callback failures break status updates
+
+            return fresh_status
+        except Exception:
+            return agent_info.status
 
     async def send_message(self, session_id: str, message: str) -> bool:
         """
         Send a message to an agent.
-        
+
         Args:
             session_id: Agent session identifier
             message: Message to send
-            
+
         Returns:
             True if successful, False if agent not found
         """
@@ -143,20 +151,21 @@ class AgentManager:
             agent_info = self._agents.get(session_id)
             if not agent_info:
                 return False
-            
-            try:
-                await agent_info.runtime_instance.send_message(session_id, message)
-                return True
-            except Exception:
-                return False
+
+        try:
+            # ⚡ Bolt Optimization: Perform slow I/O out of the lock block
+            await agent_info.runtime_instance.send_message(session_id, message)
+            return True
+        except Exception:
+            return False
 
     async def kill_agent(self, session_id: str) -> bool:
         """
         Terminate an agent.
-        
+
         Args:
             session_id: Agent session identifier
-            
+
         Returns:
             True if successful, False if agent not found
         """
@@ -164,29 +173,33 @@ class AgentManager:
             agent_info = self._agents.get(session_id)
             if not agent_info:
                 return False
-            
-            try:
-                await agent_info.runtime_instance.kill(session_id)
-                
-                # Call kill callbacks before removing from agents dict
-                for callback in self._on_kill_callbacks:
-                    try:
-                        callback(agent_info.status)
-                    except Exception:
-                        pass  # Don't let callback failures break the kill
-                
-                del self._agents[session_id]
-                return True
-            except Exception:
-                return False
+
+        try:
+            # ⚡ Bolt Optimization: Perform slow I/O out of the lock block
+            await agent_info.runtime_instance.kill(session_id)
+
+            # Call kill callbacks before removing from agents dict
+            for callback in self._on_kill_callbacks:
+                try:
+                    callback(agent_info.status)
+                except Exception:
+                    pass  # Don't let callback failures break the kill
+
+            async with self._lock:
+                # Need to re-check if it's still in the dict, though unlikely to be deleted
+                if session_id in self._agents:
+                    del self._agents[session_id]
+            return True
+        except Exception:
+            return False
 
     async def stream_agent_output(self, session_id: str) -> AsyncIterator[str]:
         """
         Stream output from an agent.
-        
+
         Args:
             session_id: Agent session identifier
-            
+
         Yields:
             Lines of output from the agent
         """
@@ -197,7 +210,7 @@ class AgentManager:
                 return
 
         try:
-            async for line in agent_info.runtime_instance.stream_output(session_id):
+            async for line in agent_info.runtime_instance.stream_output(session_id):  # type: ignore
                 # Check for drift violations
                 await anti_drift_monitor.monitor_output(
                     line, agent_info.config.role, session_id
@@ -209,7 +222,7 @@ class AgentManager:
     async def list_agents(self) -> List[AgentStatus]:
         """
         List all active agents.
-        
+
         Returns:
             List of agent statuses
         """
@@ -219,7 +232,7 @@ class AgentManager:
     async def get_agent_count(self) -> int:
         """
         Get the number of active agents.
-        
+
         Returns:
             Number of active agents
         """
@@ -229,10 +242,10 @@ class AgentManager:
     async def get_session_id_by_name(self, agent_name: str) -> Optional[str]:
         """
         Get session ID for an agent by name.
-        
+
         Args:
             agent_name: Name of the agent
-            
+
         Returns:
             Session ID if found, None otherwise
         """
@@ -246,7 +259,7 @@ class AgentManager:
         """Terminate all active agents."""
         # Make a copy of the keys to avoid modifying dict during iteration
         session_ids = list(self._agents.keys())
-        
+
         for session_id in session_ids:
             try:
                 await self.kill_agent(session_id)
