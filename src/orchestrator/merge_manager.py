@@ -169,6 +169,26 @@ class MergeManager:
 
         return list(set(conflicts))
 
+    async def _get_modified_files(self, worktree_path: str, timeout: int = 10) -> List[str]:
+        """Get modified files in a worktree branch asynchronously."""
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "git", "diff", "--name-only", "main...HEAD",
+                cwd=worktree_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+                if process.returncode == 0:
+                    return [f for f in stdout.decode().strip().splitlines() if f]
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+        except Exception:
+            pass
+        return []
+
     async def _simple_conflict_check(self, handoff: HandoffEvent) -> List[str]:
         """Conflict detection using git diff between worktree and main."""
         conflicts = []
@@ -179,40 +199,34 @@ class MergeManager:
         if not os.path.isdir(worktree_path):
             return conflicts
 
-        try:
-            # Get list of files modified in the worktree branch
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "main...HEAD"],
-                cwd=worktree_path,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            modified_files = [f for f in result.stdout.strip().splitlines() if f]
+        # Get list of files modified in the worktree branch
+        # ⚡ Bolt Optimization: Use async subprocess and gather to check for conflicts
+        # in parallel across all active agents, reducing O(N*T) to O(T) latency.
+        modified_files = await self._get_modified_files(worktree_path)
+        if not modified_files:
+            return []
 
-            # Check if those files are also modified by other active agents
-            active_agents = await agent_manager.list_agents()
-            for agent in active_agents:
-                agent_wt = os.path.join(worktree_manager.base_path, agent.name)
-                if not os.path.isdir(agent_wt) or agent_wt == worktree_path:
-                    continue
-                try:
-                    other_result = subprocess.run(
-                        ["git", "diff", "--name-only", "main...HEAD"],
-                        cwd=agent_wt,
-                        capture_output=True,
-                        text=True,
-                        timeout=10,
-                    )
-                    other_files = set(other_result.stdout.strip().splitlines())
-                    overlap = set(modified_files) & other_files
-                    if overlap:
-                        conflicts.extend(overlap)
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                    continue
+        modified_files_set = set(modified_files)
 
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            pass
+        # Check if those files are also modified by other active agents
+        active_agents = await agent_manager.list_agents()
+
+        async def check_agent_conflict(agent):
+            agent_wt = os.path.join(worktree_manager.base_path, agent.name)
+            if not os.path.isdir(agent_wt) or agent_wt == worktree_path:
+                return set()
+
+            other_files = await self._get_modified_files(agent_wt)
+            return modified_files_set & set(other_files)
+
+        # Batch check all active agents in parallel
+        # Note: We don't use a semaphore here as the number of active agents is typically small
+        results = await asyncio.gather(
+            *[check_agent_conflict(agent) for agent in active_agents]
+        )
+
+        for overlap in results:
+            conflicts.extend(overlap)
 
         return list(set(conflicts))
 
