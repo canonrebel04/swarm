@@ -46,6 +46,8 @@ def get_api_key(env_var: str) -> str | None:
     env_file = Path(".env")
     if env_file.exists():
         for line in env_file.read_text().splitlines():
-            if line.startswith(f"{env_var}="):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
+            if "=" in line:
+                key, val = line.split("=", 1)
+                if key.strip() == env_var:
+                    return val.strip().strip('"').strip("'")
     return None
