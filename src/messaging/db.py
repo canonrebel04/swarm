@@ -26,6 +26,15 @@ class SwarmDB:
     async def connect(self) -> None:
         """Connect to the database."""
         self._conn = await aiosqlite.connect(self.db_path)
+
+        # ⚡ Bolt Optimization: Enable WAL mode and NORMAL synchronous mode for SQLite.
+        # WAL (Write-Ahead Logging) dramatically improves concurrency by allowing readers
+        # and writers to operate simultaneously without locking each other out.
+        # synchronous=NORMAL improves write performance significantly while remaining
+        # crash-safe when combined with WAL mode.
+        await self._conn.execute("PRAGMA journal_mode=WAL;")
+        await self._conn.execute("PRAGMA synchronous=NORMAL;")
+
         await self._initialize_schema()
 
     async def close(self) -> None:
@@ -39,8 +48,7 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
@@ -49,11 +57,9 @@ class SwarmDB:
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 message_type TEXT NOT NULL
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS agent_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT UNIQUE NOT NULL,
@@ -64,11 +70,9 @@ class SwarmDB:
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type TEXT NOT NULL,
@@ -77,11 +81,9 @@ class SwarmDB:
                 data TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS experience_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 role TEXT NOT NULL,
@@ -91,19 +93,16 @@ class SwarmDB:
                 lessons_learned TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
+        """)
 
-        await self._conn.execute(
-            """
+        await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS swarm_instances (
                 swarm_id TEXT PRIMARY KEY,
                 last_heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP,
                 capabilities TEXT,
                 status TEXT
             )
-        """
-        )
+        """)
 
         # ⚡ Bolt Optimization: Composite Index
         # Replaces separate session_id and timestamp indexes to avoid sorting overhead.
@@ -117,6 +116,14 @@ class SwarmDB:
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_experience_logs_role ON experience_logs (role)"
         )
+        await self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS resource_locks (
+                resource_path TEXT,
+                swarm_id TEXT,
+                expires_at DATETIME,
+                PRIMARY KEY (resource_path)
+            )
+            """)
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_resource_locks_expires_at ON resource_locks (expires_at)"
         )
@@ -208,13 +215,11 @@ class SwarmDB:
         if not self._conn:
             raise RuntimeError("Database not connected")
 
-        cursor = await self._conn.execute(
-            """
+        cursor = await self._conn.execute("""
             SELECT session_id, agent_name, role, runtime, state
             FROM agent_sessions
             ORDER BY updated_at DESC
-            """
-        )
+            """)
 
         return await cursor.fetchall()
 

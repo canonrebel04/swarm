@@ -15,3 +15,22 @@
 ## 2024-05-19 - Async Action Buttons Require Immediate Feedback
 **Learning:** Destructive or state-changing actions in dynamic lists (like killing or nudging an agent) without immediate visual feedback can cause users to click multiple times, leading to duplicate API calls and frustration.
 **Action:** Always wrap async API calls in action buttons with a `try...finally` block that disables the button and updates its text (e.g., adding "...") to give immediate visual confirmation that the request is in flight.
+## 2024-05-24 - Form Label Association
+**Learning:** For standalone inputs that take up the full width, using an explicit `<label for="...">` with a red required indicator provides much better visual accessibility and context than an off-screen `aria-label`, especially when replacing complex instructions.
+**Action:** Always favor visual `<label>` tags with a `for` attribute over `aria-label` for primary form inputs to ensure both visual users and screen readers understand the required context and status.
+
+## 2024-05-25 - Standardized Async Button Feedback
+**Learning:** While appending "..." to text provides some visual feedback for async buttons, it lacks semantic context for screen readers and can look unpolished. Adding an SVG spinner combined with `aria-busy="true"` provides a robust, accessible, and visually appealing loading state across the application.
+**Action:** Always use a standard SVG spinner and toggle the `aria-busy="true"` attribute on buttons during async operations, ensuring it is cleanly removed in the `finally` block to restore the original state.
+
+## 2026-04-15 - Live Event Stream Empty States
+**Learning:** Live event streams (like system logs) that are initially empty can look broken or unpopulated if left completely blank. Users might wonder if the connection failed or if events are simply not happening yet.
+**Action:** Always provide an explicit empty state for live event containers with a helpful message explaining why it's empty (e.g., "Waiting for system events...") and apply appropriate `role="log"` and `aria-live="polite"` attributes to ensure screen readers announce incoming events.
+
+## 2026-04-19 - Interactive SVG Accessibility
+**Learning:** Custom interactive SVG visualizations (like DAGs or charts) lack native accessibility and interaction states. Specifically, truncated text inside `<text>` tags cannot be fully read by users or screen readers without additional semantic wrapping.
+**Action:** Always wrap interactive SVG components in a `<g>` group with `tabindex="0"`, `role="group"`, and an explicit `aria-label`. Use an inner `<title>` element to provide native browser tooltips for truncated text, and ensure any dynamically injected data inside attributes is properly escaped (e.g. `.replace(/"/g, '&quot;')`) to prevent HTML layout breaks.
+
+## 2026-04-21 - Global Keyboard Shortcuts Discoverability
+**Learning:** Adding global keyboard shortcuts (like `/` to focus search or input) improves power user efficiency, but users will not discover them if there are no visual cues. Additionally, event listeners for shortcuts must check `document.activeElement` to prevent the shortcut key from interfering with regular typing in other inputs or textareas.
+**Action:** Always pair global keyboard shortcuts with a visually distinct `<kbd>` hint near the target element or in a prominent location, and ensure the event listener explicitly ignores keystrokes when the user is already typing in an input field.

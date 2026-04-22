@@ -27,3 +27,5 @@ coverage/
 .cache/
 tmp/
 .a0proj/
+test_event_bus.db*
+.polyglot/test_event_bus.db*

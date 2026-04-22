@@ -6,18 +6,19 @@ and either auto-merges clean work or assigns merger agents for conflicts.
 """
 
 from __future__ import annotations
-import asyncio
-from typing import Dict, List, Optional
-from dataclasses import dataclass
-import json
-import subprocess
-import os
-import time
 
-from .agent_manager import agent_manager
-from .coordinator import Coordinator, TaskPacket
+import asyncio
+import json
+import os
+import subprocess
+import time
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
 from ..messaging.event_bus import event_bus
 from ..worktree.manager import worktree_manager
+from .agent_manager import agent_manager
+from .coordinator import Coordinator, TaskPacket
 
 
 @dataclass
@@ -97,19 +98,22 @@ class MergeManager:
         """Check for conflicts using CodebaseIndex or fallback to advanced check."""
         try:
             from src.memory.codebase_index import CodebaseIndex
+
             index = CodebaseIndex()
             return await index.conflict_check(handoff.worktree_branch)
         except ImportError:
             await event_bus.emit(
                 "warning",
                 "merge-manager",
-                {"message": "CodebaseIndex not available. Falling back to simple conflict check."}
+                {
+                    "message": "CodebaseIndex not available. Falling back to simple conflict check."
+                },
             )
             return await self._advanced_conflict_check(handoff)
 
     async def _advanced_conflict_check(self, handoff: HandoffEvent) -> List[str]:
         """Check for conflicts using git merge-tree."""
-        conflicts = []
+        conflicts: List[str] = []
         worktree_path = os.path.join(
             worktree_manager.base_path, handoff.worktree_branch
         )
@@ -127,14 +131,20 @@ class MergeManager:
             # Let's try --write-tree first.
 
             process = await asyncio.create_subprocess_exec(
-                "git", "merge-tree", "--write-tree", "main", "HEAD",
+                "git",
+                "merge-tree",
+                "--write-tree",
+                "main",
+                "HEAD",
                 cwd=worktree_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
 
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=15
+                )
                 # If exit code is 0, no conflicts.
                 # If exit code is non-zero (usually 1), there are conflicts.
                 if process.returncode == 0:
@@ -159,7 +169,7 @@ class MergeManager:
             await event_bus.emit(
                 "warning",
                 "merge-manager",
-                {"message": f"Advanced conflict check failed: {str(e)}"}
+                {"message": f"Advanced conflict check failed: {str(e)}"},
             )
 
         # In case the git version doesn't support --write-tree or it failed,
@@ -191,7 +201,7 @@ class MergeManager:
 
     async def _simple_conflict_check(self, handoff: HandoffEvent) -> List[str]:
         """Conflict detection using git diff between worktree and main."""
-        conflicts = []
+        conflicts: List[str] = []
         worktree_path = os.path.join(
             worktree_manager.base_path, handoff.worktree_branch
         )
@@ -318,33 +328,32 @@ class MergeManager:
                     f"Worktree {handoff.worktree_branch} not found at {worktree_path}"
                 )
 
-            # Change to worktree directory
-            original_dir = os.getcwd()
-            os.chdir(worktree_path)
+            # ⚡ Bolt Optimization: Replace os.chdir and blocking subprocess.run with cwd and asyncio.create_subprocess_exec
+            # This avoids blocking the async event loop and prevents race conditions from mutating global process state (os.chdir).
+            process = await asyncio.create_subprocess_exec(
+                "git",
+                "merge",
+                "--no-ff",
+                "-m",
+                f"Auto-merge: {handoff.task_title}",
+                "main",
+                cwd=worktree_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
 
-            try:
-                # Perform the merge
-                result = subprocess.run(
-                    [
-                        "git",
-                        "merge",
-                        "--no-ff",
-                        "-m",
-                        f"Auto-merge: {handoff.task_title}",
-                        "main",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
+            stdout, stderr = await process.communicate()
+            stdout_str = stdout.decode()
+            stderr_str = stderr.decode()
 
+            if process.returncode == 0:
                 await event_bus.emit(
                     "merge_success",
                     "merge-manager",
                     {
                         "task_title": handoff.task_title,
                         "worktree": handoff.worktree_branch,
-                        "merge_output": result.stdout,
+                        "merge_output": stdout_str,
                     },
                 )
 
@@ -353,14 +362,18 @@ class MergeManager:
 
                 # Cleanup worktree after successful merge
                 await self._cleanup_worktree(handoff)
-
-            finally:
-                os.chdir(original_dir)
+            else:
+                raise subprocess.CalledProcessError(
+                    process.returncode or 1,
+                    ["git", "merge"],
+                    output=stdout_str,
+                    stderr=stderr_str,
+                )
 
         except subprocess.CalledProcessError as e:
             # Extract conflicting files from git output
             conflicting_files = []
-            for line in e.stdout.split("\n"):
+            for line in (e.stdout or "").split("\n"):
                 if line.startswith("CONFLICT"):
                     parts = line.split(":")
                     if len(parts) > 1:
@@ -399,14 +412,29 @@ class MergeManager:
             if not os.path.isdir(worktree_path):
                 return
 
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "main...HEAD"],
+            # ⚡ Bolt Optimization: Replace blocking subprocess.run with asyncio.create_subprocess_exec
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "diff",
+                "--name-only",
+                "main...HEAD",
                 cwd=worktree_path,
-                capture_output=True,
-                text=True,
-                timeout=10,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            modified_files = [f for f in result.stdout.strip().splitlines() if f]
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return
+
+            if proc.returncode != 0:
+                return
+
+            modified_files = [f for f in stdout.decode().strip().splitlines() if f]
 
             await event_bus.emit(
                 "info",
@@ -416,7 +444,7 @@ class MergeManager:
                     "files": modified_files,
                 },
             )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, Exception):
+        except Exception:
             pass
 
     async def _cleanup_worktree(self, handoff: HandoffEvent) -> None:
