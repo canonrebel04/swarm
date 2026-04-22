@@ -59,8 +59,11 @@
         <div class="panel" id="chat-panel" style="grid-column: 1 / -1;">
             <div class="panel-title">Overseer Chat</div>
             <form onsubmit="submitObjective(event)" style="display: flex; flex-direction: column; gap: 10px;">
-                <label for="objective-input" style="font-size: 0.9rem; font-weight: bold; color: var(--text);">
-                    High-Level Objective <span style="color: var(--error);" aria-hidden="true" title="Required">*</span>
+                <label for="objective-input" style="font-size: 0.9rem; font-weight: bold; color: var(--text); display: flex; justify-content: space-between; align-items: center;">
+                    <span>High-Level Objective <span style="color: var(--error);" aria-hidden="true" title="Required">*</span></span>
+                    <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal; display: flex; align-items: center; gap: 4px;">
+                        Press <kbd style="background: var(--surface-light); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-family: monospace; color: var(--text); font-size: 0.75rem;">/</kbd> to focus
+                    </span>
                 </label>
                 <div style="display: flex; gap: 10px;">
                     <input type="text" id="objective-input" required aria-describedby="submit-error" placeholder="e.g., Analyze the latest market data..." autofocus

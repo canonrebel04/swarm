@@ -356,5 +356,19 @@ async function submitObjective(event) {
         input.focus();
     }
 }
+// --- 4. Global Keyboard Shortcuts ---
+document.addEventListener('keydown', (event) => {
+    // Press '/' to focus the main objective input
+    if (event.key === '/' &&
+        document.activeElement.tagName !== 'INPUT' &&
+        document.activeElement.tagName !== 'TEXTAREA') {
+        event.preventDefault(); // Prevent '/' from being typed in the input
+        const input = document.getElementById('objective-input');
+        if (input && !input.disabled) {
+            input.focus();
+        }
+    }
+});
+
 // Bootstrap
 connectWebSocket();
