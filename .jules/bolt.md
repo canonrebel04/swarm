@@ -39,3 +39,6 @@
 ## 2024-04-18 - Blocking I/O inside asyncio.Lock
 **Learning:** Found a major concurrency bottleneck in `src/orchestrator/agent_manager.py` where `get_agent_status` held an `asyncio.Lock` while awaiting `agent_info.runtime_instance.get_status(session_id)`. Since `get_status` is an I/O-bound operation (e.g., fetching from a remote runtime API), holding the lock blocked all other concurrent tasks from accessing or modifying the `AgentManager`'s state.
 **Action:** Always minimize the scope of `asyncio.Lock` to cover only the synchronous retrieval and mutation of shared in-memory state (like a dictionary). Release the lock before making asynchronous, potentially slow I/O calls.
+## 2024-04-22 - EventBus Lock Optimization
+**Learning:** Found a major concurrency bottleneck in `src/messaging/event_bus.py` where `_notify_subscribers` held an `asyncio.Lock` while iterating through and awaiting potentially slow I/O-bound callbacks. This blocked all other tasks from publishing events, subscribing, or unsubscribing, significantly slowing down the event bus throughput and responsiveness.
+**Action:** Narrowed the lock's scope to only safely copy the lists of callbacks, executing them outside the lock to unblock concurrent event processing.
