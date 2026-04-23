@@ -159,7 +159,7 @@ function renderAgentCards() {
                 <span style="font-size: 0.85rem; font-weight: bold; letter-spacing: 0.05em;">${a.state.toUpperCase()}</span>
             </div>
 
-            <div style="font-size: 0.85rem; margin-bottom: 15px; color: var(--text); line-height: 1.4; background: var(--bg); padding: 8px; border-radius: 4px; border-left: 3px solid var(--accent);">
+            <div title="${a.current_task.replace(/"/g, '&quot;')}" style="font-size: 0.85rem; margin-bottom: 15px; color: var(--text); line-height: 1.4; background: var(--bg); padding: 8px; border-radius: 4px; border-left: 3px solid var(--accent); cursor: help;">
                 ${a.current_task.substring(0, 120)}${a.current_task.length > 120 ? '...' : ''}
             </div>
 
@@ -212,6 +212,16 @@ async function agentAction(event, sessionId, action) {
 
 function renderEventLog() {
     const log = document.getElementById('event-log');
+    if (state.events.length === 0) {
+        log.innerHTML = `
+            <div style="text-align: center; padding: 2rem; color: var(--text-dim);">
+                <div aria-hidden="true" style="font-size: 2.5rem; margin-bottom: 1rem;">📡</div>
+                <div style="font-weight: bold; margin-bottom: 0.5rem; color: var(--text);">Waiting for system events...</div>
+                <div style="font-size: 0.9rem; line-height: 1.4;">Live logs will stream here once the system is active.</div>
+            </div>`;
+        return;
+    }
+
     log.innerHTML = state.events.map(e => `
         <div class="event-row" style="margin-bottom: 5px; font-size: 0.85rem; border-bottom: 1px solid #2d2e3d; padding-bottom: 5px;">
             <span style="color: var(--text-dim); margin-right: 8px;">[${new Date(e.timestamp*1000).toLocaleTimeString()}]</span>
@@ -242,7 +252,7 @@ function renderTaskGraph() {
     const spacing = 20;
     const svgHeight = allTasks.length * (nodeHeight + spacing);
     
-    let svgContent = `<svg width="100%" height="${svgHeight}" style="max-width: ${nodeWidth}px;">`;
+    let svgContent = `<svg width="100%" height="${svgHeight}" style="max-width: ${nodeWidth}px;" role="group" aria-label="Task Dependency Graph">`;
     
     allTasks.forEach((task, i) => {
         const y = i * (nodeHeight + spacing);
@@ -252,10 +262,14 @@ function renderTaskGraph() {
         if (task.status === 'failed') color = 'var(--error)';
         if (task.status === 'ready') color = 'var(--warn)';
 
+        const titleSafe = task.title.replace(/"/g, '&quot;');
+        const truncatedTitle = task.title.length > 25 ? task.title.substring(0, 25) + '...' : task.title;
+
         svgContent += `
-            <g class="task-node" data-id="${task.id}">
+            <g class="task-node" data-id="${task.id}" tabindex="0" role="group" aria-label="Task: ${titleSafe}, Status: ${task.status}">
+                <title>${titleSafe}</title>
                 <rect x="0" y="${y}" width="${nodeWidth}" height="${nodeHeight}" rx="4" fill="var(--bg)" stroke="${color}" stroke-width="2" />
-                <text x="10" y="${y + 25}" fill="${color}" font-size="12" font-family="monospace">${task.title.substring(0, 25)}</text>
+                <text x="10" y="${y + 25}" fill="${color}" font-size="12" font-family="monospace">${truncatedTitle}</text>
             </g>
         `;
     });
@@ -342,5 +356,19 @@ async function submitObjective(event) {
         input.focus();
     }
 }
+// --- 4. Global Keyboard Shortcuts ---
+document.addEventListener('keydown', (event) => {
+    // Press '/' to focus the main objective input
+    if (event.key === '/' &&
+        document.activeElement.tagName !== 'INPUT' &&
+        document.activeElement.tagName !== 'TEXTAREA') {
+        event.preventDefault(); // Prevent '/' from being typed in the input
+        const input = document.getElementById('objective-input');
+        if (input && !input.disabled) {
+            input.focus();
+        }
+    }
+});
+
 // Bootstrap
 connectWebSocket();

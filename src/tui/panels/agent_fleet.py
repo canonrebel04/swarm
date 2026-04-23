@@ -147,6 +147,3 @@ class AgentFleetPanel(Widget):
 
     def get_agent_count(self) -> int:
         return len(self._agents)
-
-    def get_running_count(self) -> int:
-        return sum(1 for a in self._agents.values() if a.state == "running")

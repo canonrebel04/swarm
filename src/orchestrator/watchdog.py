@@ -10,7 +10,7 @@ Extended with supervisor intervention workflow:
 import asyncio
 from typing import Dict, List, Callable, Optional
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from ..runtimes.base import AgentStatus
 from .agent_manager import agent_manager
 

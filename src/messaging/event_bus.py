@@ -106,26 +106,31 @@ class EventBus:
 
     async def _notify_subscribers(self, event: Event) -> None:
         """Notify all subscribers for this event type."""
+        # ⚡ Bolt Optimization: Only hold the lock to copy the callback lists
+        # to avoid blocking the event loop while awaiting potentially slow I/O-bound callbacks.
         async with self._lock:
-            # Notify type-specific subscribers
-            for callback in self._subscribers.get(event.event_type, []):
-                try:
-                    if asyncio.iscoroutinefunction(callback):
-                        await callback(event)
-                    else:
-                        callback(event)
-                except Exception as e:
-                    print(f"Error in event callback: {e}")
+            type_callbacks = list(self._subscribers.get(event.event_type, []))
+            wildcard_callbacks = list(self._subscribers.get("*", []))
 
-            # Notify wildcard subscribers
-            for callback in self._subscribers.get("*", []):
-                try:
-                    if asyncio.iscoroutinefunction(callback):
-                        await callback(event)
-                    else:
-                        callback(event)
-                except Exception as e:
-                    print(f"Error in event callback: {e}")
+        # Notify type-specific subscribers
+        for callback in type_callbacks:
+            try:
+                if asyncio.iscoroutinefunction(callback):
+                    await callback(event)
+                else:
+                    callback(event)
+            except Exception as e:
+                print(f"Error in event callback: {e}")
+
+        # Notify wildcard subscribers
+        for callback in wildcard_callbacks:
+            try:
+                if asyncio.iscoroutinefunction(callback):
+                    await callback(event)
+                else:
+                    callback(event)
+            except Exception as e:
+                print(f"Error in event callback: {e}")
 
     def subscribe(self, event_type: str, callback: Callable) -> None:
         """
