@@ -30,6 +30,10 @@
 ## 2024-04-14 - Parallelize N+1 Git Diff operations in Worktrees
 **Learning:** Found a classic N+1 blocking I/O bottleneck in `src/orchestrator/merge_manager.py` where the event loop was completely blocked while iterating through all active agents to run `git diff` sequentially via `subprocess.run()`.
 **Action:** Always replace sequential blocking `subprocess.run()` calls inside `async def` methods with `asyncio.create_subprocess_exec()` and `asyncio.gather()` when performing I/O over collections (like multiple Git worktrees).
+
+## 2026-04-15 - Pull List-to-Set Conversions Out of Loops
+**Learning:** Found an O(N) `set()` conversion on a list of file paths happening repeatedly inside an iteration loop during Git diff analysis across active worktrees. This creates unnecessary overhead for large diffs multiplied by the number of active agents.
+**Action:** Always pull redundant `set()` conversions out of loops when the source collection does not change between iterations. Calculate the set once, store it in a variable, and reuse it inside the loop to ensure O(1) membership and fast intersections.
 ## 2024-04-16 - Asynchronous Git Auto-Merge and Global State Pitfalls
 **Learning:** In `src/orchestrator/merge_manager.py`, `_perform_auto_merge` used `os.chdir()` to change into a worktree directory to execute a synchronous `subprocess.run(["git", "merge", ...])`. Since `os.chdir()` modifies process-wide global state, running multiple merges concurrently (or doing other work in the event loop) could cause race conditions where one async task inadvertently alters the working directory of another. Furthermore, `subprocess.run` blocked the entire async event loop.
 **Action:** Never use `os.chdir()` inside `async` code or concurrent systems. Instead, always use the `cwd` argument in process execution functions (like `asyncio.create_subprocess_exec(..., cwd=worktree_path)`). Additionally, replace blocking `subprocess.run` calls with their async equivalents to avoid stalling the event loop.
