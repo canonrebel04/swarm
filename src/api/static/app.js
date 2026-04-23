@@ -185,7 +185,7 @@ async function agentAction(event, sessionId, action) {
         button.setAttribute('aria-busy', 'true');
         originalHTML = button.innerHTML;
         button.innerHTML = `
-            <svg class="spinner" viewBox="0 0 24 24" style="width: 14px; height: 14px; margin-right: 6px; vertical-align: middle; display: inline-block;">
+            <svg class="spinner" aria-hidden="true" viewBox="0 0 24 24" style="width: 14px; height: 14px; margin-right: 6px; vertical-align: middle; display: inline-block;">
                 <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" stroke-dasharray="32" stroke-linecap="round"></circle>
             </svg>
             ${button.textContent}
@@ -298,13 +298,11 @@ async function submitObjective(event) {
     button.setAttribute('aria-busy', 'true');
     const originalHTML = button.innerHTML;
     button.innerHTML = `
-        <svg class="spinner" viewBox="0 0 24 24" style="width: 16px; height: 16px; margin-right: 8px; vertical-align: middle; display: inline-block;">
+        <svg class="spinner" aria-hidden="true" viewBox="0 0 24 24" style="width: 16px; height: 16px; margin-right: 8px; vertical-align: middle; display: inline-block;">
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" stroke-dasharray="32" stroke-linecap="round"></circle>
         </svg>
         Deploying...
     `;
-    button.style.opacity = "0.7";
-    button.style.cursor = "not-allowed";
 
     try {
         const res = await authorizedFetch('/api/v1/tasks', {
@@ -351,8 +349,6 @@ async function submitObjective(event) {
         button.removeAttribute('aria-busy');
         button.title = input.value.trim() ? '' : 'Please enter an objective first';
         button.innerHTML = originalHTML;
-        button.style.opacity = "1";
-        button.style.cursor = "pointer";
         input.focus();
     }
 }

@@ -34,3 +34,7 @@
 ## 2026-04-21 - Global Keyboard Shortcuts Discoverability
 **Learning:** Adding global keyboard shortcuts (like `/` to focus search or input) improves power user efficiency, but users will not discover them if there are no visual cues. Additionally, event listeners for shortcuts must check `document.activeElement` to prevent the shortcut key from interfering with regular typing in other inputs or textareas.
 **Action:** Always pair global keyboard shortcuts with a visually distinct `<kbd>` hint near the target element or in a prominent location, and ensure the event listener explicitly ignores keystrokes when the user is already typing in an input field.
+
+## 2024-05-18 - Managing Disabled Interactive States
+**Learning:** Hardcoding CSS styles like opacity and cursor in JS to represent a 'disabled' state can lead to inconsistent UI if those styles desync from the CSS classes meant to handle them (e.g. `.btn:disabled`). Also, decorative SVGs acting as loading spinners can confuse screen readers if not properly hidden using `aria-hidden="true"`.
+**Action:** Always rely on standard HTML properties like `disabled` mapping to global CSS selectors, and ensure decorative visual elements are hidden from assistive technologies.
