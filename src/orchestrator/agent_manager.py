@@ -103,28 +103,30 @@ class AgentManager:
         Returns:
             Current agent status or None if not found
         """
+        # ⚡ Bolt Optimization: Only hold the lock to retrieve the agent_info object
+        # to avoid blocking the event loop while awaiting the I/O-bound get_status method.
         async with self._lock:
             agent_info = self._agents.get(session_id)
             if not agent_info:
                 return None
-
-        # Get fresh status from runtime
+            
+        # Get fresh status from runtime outside the lock
         try:
-            # ⚡ Bolt Optimization: Perform slow I/O out of the lock block
             fresh_status = await agent_info.runtime_instance.get_status(session_id)
 
+            # Re-acquire lock to update the internal state safely
             async with self._lock:
-                # Need to re-check if it's still in the dict
+                # Double check the agent hasn't been deleted while we were yielding
                 if session_id not in self._agents:
                     return fresh_status
-
-                # Check if state actually changed
+                
+                # Check if state actually changed inside the lock to prevent race conditions
                 state_changed = fresh_status.state != agent_info.status.state
 
                 agent_info.status = fresh_status
                 agent_info.last_updated = asyncio.get_event_loop().time()
 
-            # Call state change callbacks if state changed (outside lock to prevent blocking if callback is slow)
+            # Call state change callbacks outside the lock to prevent re-entrancy issues
             if state_changed:
                 for callback in self._on_state_change_callbacks:
                     try:

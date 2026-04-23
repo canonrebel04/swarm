@@ -13,6 +13,7 @@ from ..orchestrator.agent_manager import agent_manager
 from ..runtimes.registry import registry
 from ..tui.state import AgentRow
 import asyncio
+import os
 import time
 
 
@@ -238,23 +239,22 @@ class SwarmApp(App):
                     break
             
             if agent_role:
-                # Load the role contract (YAML)
-                yaml_path = f"src/roles/contracts/{agent_role}.yaml"
-                yaml_content = ""
-                if os.path.exists(yaml_path):
-                    with open(yaml_path, 'r') as f:
-                        yaml_content = f.read()
-                else:
-                    yaml_content = f"# No YAML contract found at {yaml_path}"
+                def read_file_safe(path: str, error_msg: str) -> str:
+                    """⚡ Bolt Optimization: Helper for safe synchronous file I/O to be run in a thread."""
+                    if os.path.exists(path):
+                        with open(path, 'r') as f:
+                            return f.read()
+                    return error_msg
 
-                # Load the role identity (MD)
+                # Load the role contract (YAML) and identity (MD) in parallel using threads
+                # ⚡ Bolt Optimization: Offload blocking I/O to threads to keep the TUI responsive
+                yaml_path = f"src/roles/contracts/{agent_role}.yaml"
                 md_path = f"src/agents/definitions/{agent_role}.md"
-                md_content = ""
-                if os.path.exists(md_path):
-                    with open(md_path, 'r') as f:
-                        md_content = f.read()
-                else:
-                    md_content = f"# No Markdown definition found at {md_path}"
+
+                yaml_content, md_content = await asyncio.gather(
+                    asyncio.to_thread(read_file_safe, yaml_path, f"# No YAML contract found at {yaml_path}"),
+                    asyncio.to_thread(read_file_safe, md_path, f"# No Markdown definition found at {md_path}")
+                )
                 
                 # Show enhanced inspect modal
                 self.push_screen(InspectModal(self.selected_agent, agent_role, yaml_content, md_content))

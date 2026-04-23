@@ -179,29 +179,25 @@ class MergeManager:
 
         return list(set(conflicts))
 
-    async def _get_git_diff_async(self, worktree_path: str) -> Optional[str]:
-        """Helper to run git diff asynchronously."""
+    async def _get_modified_files(self, worktree_path: str, timeout: int = 10) -> List[str]:
+        """Get modified files in a worktree branch asynchronously."""
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "git",
-                "diff",
-                "--name-only",
-                "main...HEAD",
+            process = await asyncio.create_subprocess_exec(
+                "git", "diff", "--name-only", "main...HEAD",
                 cwd=worktree_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10.0)
-            if proc.returncode != 0:
-                return None
-            return stdout.decode().strip()
-        except (asyncio.TimeoutError, Exception):
-            if "proc" in locals() and proc.returncode is None:
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
-            return None
+            try:
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+                if process.returncode == 0:
+                    return [f for f in stdout.decode().strip().splitlines() if f]
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+        except Exception:
+            pass
+        return []
 
     async def _simple_conflict_check(self, handoff: HandoffEvent) -> List[str]:
         """Conflict detection using git diff between worktree and main."""
@@ -213,42 +209,34 @@ class MergeManager:
         if not os.path.isdir(worktree_path):
             return conflicts
 
-        # ⚡ Bolt Optimization: Replaced blocking subprocess.run calls with asyncio.create_subprocess_exec
-        # and asyncio.gather to avoid blocking the event loop and parallelize N+1 I/O-bound git operations
-        # over all active agents' worktrees.
-        diff_output = await self._get_git_diff_async(worktree_path)
-        if diff_output is None:
-            return conflicts
-
-        modified_files = [f for f in diff_output.splitlines() if f]
+        # Get list of files modified in the worktree branch
+        # ⚡ Bolt Optimization: Use async subprocess and gather to check for conflicts
+        # in parallel across all active agents, reducing O(N*T) to O(T) latency.
+        modified_files = await self._get_modified_files(worktree_path)
         if not modified_files:
-            return conflicts
+            return []
+
+        modified_files_set = set(modified_files)
 
         # Check if those files are also modified by other active agents
         active_agents = await agent_manager.list_agents()
-        agent_wts = []
-        for agent in active_agents:
+
+        async def check_agent_conflict(agent):
             agent_wt = os.path.join(worktree_manager.base_path, agent.name)
-            if os.path.isdir(agent_wt) and agent_wt != worktree_path:
-                agent_wts.append(agent_wt)
+            if not os.path.isdir(agent_wt) or agent_wt == worktree_path:
+                return set()
 
-        # Run all diffs concurrently
-        if agent_wts:
-            diff_results = await asyncio.gather(
-                *[self._get_git_diff_async(wt) for wt in agent_wts],
-                return_exceptions=True,
-            )
+            other_files = await self._get_modified_files(agent_wt)
+            return modified_files_set & set(other_files)
 
-            # ⚡ Bolt Optimization: Extracted `set(modified_files)` out of the loop
-            # to avoid redundant O(N) operations and improve performance when processing large file lists.
-            modified_files_set = set(modified_files)
+        # Batch check all active agents in parallel
+        # Note: We don't use a semaphore here as the number of active agents is typically small
+        results = await asyncio.gather(
+            *[check_agent_conflict(agent) for agent in active_agents]
+        )
 
-            for result in diff_results:
-                if isinstance(result, str) and result:
-                    other_files = set(result.splitlines())
-                    overlap = modified_files_set & other_files
-                    if overlap:
-                        conflicts.extend(overlap)
+        for overlap in results:
+            conflicts.extend(overlap)
 
         return list(set(conflicts))
 
