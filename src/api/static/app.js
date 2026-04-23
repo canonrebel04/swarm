@@ -144,33 +144,37 @@ function renderAgentCards() {
         return;
     }
 
-    container.innerHTML = state.agents.map(a => `
-        <div class="agent-card" style="border: 1px solid var(--border); padding: 15px; border-radius: 8px; margin-bottom: 15px; background: var(--surface-darken-1);">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                <div>
-                    <div style="font-weight: bold; color: var(--primary); font-size: 1.1rem;">${a.name}</div>
-                    <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 2px;">${a.runtime.toUpperCase()} • PID: ${a.pid || 'N/A'}</div>
-                </div>
-                <span class="badge" style="background: var(--primary); color: var(--bg); font-weight: bold;">${a.role.toUpperCase()}</span>
-            </div>
-            
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                <div style="width: 8px; height: 8px; border-radius: 50%; background: ${a.state === 'running' ? 'var(--success)' : 'var(--warn)'}; shadow: 0 0 5px ${a.state === 'running' ? 'var(--success)' : 'var(--warn)'};"></div>
-                <span style="font-size: 0.85rem; font-weight: bold; letter-spacing: 0.05em;">${a.state.toUpperCase()}</span>
-            </div>
+    // ⚡ Bolt Optimization: Use string concatenation instead of array mapping and joining.
+    let html = '';
+    for (let i = 0; i < state.agents.length; i++) {
+        const a = state.agents[i];
+        const stateColor = a.state === 'running' ? 'var(--success)' : 'var(--warn)';
+        const taskSnippet = a.current_task.length > 120 ? a.current_task.substring(0, 120) + '...' : a.current_task;
 
-            <div style="font-size: 0.85rem; margin-bottom: 15px; color: var(--text); line-height: 1.4; background: var(--bg); padding: 8px; border-radius: 4px; border-left: 3px solid var(--accent);">
-                ${a.current_task.substring(0, 120)}${a.current_task.length > 120 ? '...' : ''}
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <button aria-label="Nudge agent ${a.name}" onclick="agentAction('${a.session_id}', 'nudge')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--primary); background: transparent; color: var(--primary); cursor: pointer; font-size: 0.8rem;">Nudge</button>
-                <button aria-label="Pause agent ${a.name}" onclick="agentAction('${a.session_id}', 'pause')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--warn); background: transparent; color: var(--warn); cursor: pointer; font-size: 0.8rem;">Pause</button>
-                <button aria-label="Retry agent ${a.name}" onclick="agentAction('${a.session_id}', 'retry')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; font-size: 0.8rem;">Retry</button>
-                <button aria-label="Kill agent ${a.name}" onclick="agentAction('${a.session_id}', 'kill')" style="padding: 6px; border-radius: 4px; border: none; background: var(--error); color: white; cursor: pointer; font-size: 0.8rem; font-weight: bold;">Kill</button>
-            </div>
-        </div>
-    `).join('');
+        html += `<div class="agent-card" style="border: 1px solid var(--border); padding: 15px; border-radius: 8px; margin-bottom: 15px; background: var(--surface-darken-1);">` +
+            `<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">` +
+                `<div>` +
+                    `<div style="font-weight: bold; color: var(--primary); font-size: 1.1rem;">${a.name}</div>` +
+                    `<div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 2px;">${a.runtime.toUpperCase()} • PID: ${a.pid || 'N/A'}</div>` +
+                `</div>` +
+                `<span class="badge" style="background: var(--primary); color: var(--bg); font-weight: bold;">${a.role.toUpperCase()}</span>` +
+            `</div>` +
+            `<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">` +
+                `<div style="width: 8px; height: 8px; border-radius: 50%; background: ${stateColor}; shadow: 0 0 5px ${stateColor};"></div>` +
+                `<span style="font-size: 0.85rem; font-weight: bold; letter-spacing: 0.05em;">${a.state.toUpperCase()}</span>` +
+            `</div>` +
+            `<div style="font-size: 0.85rem; margin-bottom: 15px; color: var(--text); line-height: 1.4; background: var(--bg); padding: 8px; border-radius: 4px; border-left: 3px solid var(--accent);">` +
+                `${taskSnippet}` +
+            `</div>` +
+            `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">` +
+                `<button aria-label="Nudge agent ${a.name}" onclick="agentAction('${a.session_id}', 'nudge')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--primary); background: transparent; color: var(--primary); cursor: pointer; font-size: 0.8rem;">Nudge</button>` +
+                `<button aria-label="Pause agent ${a.name}" onclick="agentAction('${a.session_id}', 'pause')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--warn); background: transparent; color: var(--warn); cursor: pointer; font-size: 0.8rem;">Pause</button>` +
+                `<button aria-label="Retry agent ${a.name}" onclick="agentAction('${a.session_id}', 'retry')" style="padding: 6px; border-radius: 4px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; font-size: 0.8rem;">Retry</button>` +
+                `<button aria-label="Kill agent ${a.name}" onclick="agentAction('${a.session_id}', 'kill')" style="padding: 6px; border-radius: 4px; border: none; background: var(--error); color: white; cursor: pointer; font-size: 0.8rem; font-weight: bold;">Kill</button>` +
+            `</div>` +
+        `</div>`;
+    }
+    container.innerHTML = html;
 }
 
 async function agentAction(sessionId, action) {
@@ -192,14 +196,23 @@ async function agentAction(sessionId, action) {
 
 function renderEventLog() {
     const log = document.getElementById('event-log');
-    log.innerHTML = state.events.map(e => `
-        <div class="event-row" style="margin-bottom: 5px; font-size: 0.85rem; border-bottom: 1px solid #2d2e3d; padding-bottom: 5px;">
-            <span style="color: var(--text-dim); margin-right: 8px;">[${new Date(e.timestamp*1000).toLocaleTimeString()}]</span>
-            <span style="color: var(--accent); font-weight: bold;">&lt;${e.source}&gt;</span>
-            <span style="color: var(--success);">${e.event_type.toUpperCase()}</span>
-            <span style="margin-left: 10px;">${typeof e.data === 'object' ? JSON.stringify(e.data) : e.data}</span>
-        </div>
-    `).join('');
+
+    // ⚡ Bolt Optimization: Use string concatenation instead of array mapping and joining.
+    // Reduces memory allocations and garbage collection overhead during rapid WebSocket event streams.
+    let html = '';
+    for (let i = 0; i < state.events.length; i++) {
+        const e = state.events[i];
+        const timeStr = new Date(e.timestamp * 1000).toLocaleTimeString();
+        const typeStr = e.event_type.toUpperCase();
+        const dataStr = typeof e.data === 'object' ? JSON.stringify(e.data) : e.data;
+        html += `<div class="event-row" style="margin-bottom: 5px; font-size: 0.85rem; border-bottom: 1px solid #2d2e3d; padding-bottom: 5px;">` +
+            `<span style="color: var(--text-dim); margin-right: 8px;">[${timeStr}]</span>` +
+            `<span style="color: var(--accent); font-weight: bold;">&lt;${e.source}&gt;</span>` +
+            `<span style="color: var(--success);">${typeStr}</span>` +
+            `<span style="margin-left: 10px;">${dataStr}</span>` +
+        `</div>`;
+    }
+    log.innerHTML = html;
 }
 
 function renderTaskGraph() {
@@ -224,21 +237,19 @@ function renderTaskGraph() {
     
     let svgContent = `<svg width="100%" height="${svgHeight}" style="max-width: ${nodeWidth}px;">`;
     
-    allTasks.forEach((task, i) => {
+    // ⚡ Bolt Optimization: Use standard for-loop and string concatenation instead of array mapping/joining
+    for (let i = 0; i < allTasks.length; i++) {
+        const task = allTasks[i];
         const y = i * (nodeHeight + spacing);
         let color = 'var(--text-dim)';
         if (task.status === 'active') color = 'var(--primary)';
-        if (task.status === 'completed') color = 'var(--success)';
-        if (task.status === 'failed') color = 'var(--error)';
-        if (task.status === 'ready') color = 'var(--warn)';
+        else if (task.status === 'completed') color = 'var(--success)';
+        else if (task.status === 'failed') color = 'var(--error)';
+        else if (task.status === 'ready') color = 'var(--warn)';
 
-        svgContent += `
-            <g class="task-node" data-id="${task.id}">
-                <rect x="0" y="${y}" width="${nodeWidth}" height="${nodeHeight}" rx="4" fill="var(--bg)" stroke="${color}" stroke-width="2" />
-                <text x="10" y="${y + 25}" fill="${color}" font-size="12" font-family="monospace">${task.title.substring(0, 25)}</text>
-            </g>
-        `;
-    });
+        const titleObj = task.title.substring(0, 25);
+        svgContent += `<g class="task-node" data-id="${task.id}"><rect x="0" y="${y}" width="${nodeWidth}" height="${nodeHeight}" rx="4" fill="var(--bg)" stroke="${color}" stroke-width="2" /><text x="10" y="${y + 25}" fill="${color}" font-size="12" font-family="monospace">${titleObj}</text></g>`;
+    }
     
     svgContent += '</svg>';
     container.innerHTML = svgContent;

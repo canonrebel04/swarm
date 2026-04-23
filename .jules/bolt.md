@@ -20,3 +20,7 @@
 ## 2024-04-08 - Vanilla JS Proxy Thrashing
 **Learning:** Using a naive Javascript `Proxy` setter to directly trigger synchronous UI renders causes significant main thread blocking and layout thrashing, especially when bursty events (like rapid WebSocket signals) occur.
 **Action:** Always decouple reactive state updates from synchronous DOM rendering by batching UI changes with `requestAnimationFrame` when using raw Proxies for state management in vanilla JS apps. Furthermore, API requests triggered by rapid state streams should be debounced.
+
+## 2025-04-12 - Vanilla JS String Concatenation vs Array Mapping
+**Learning:** Using `array.map(...).join('')` for generating HTML strings in vanilla JS apps creates excessive temporary array objects, increasing memory pressure and garbage collection overhead during rapid re-renders (e.g. handling WebSocket streams).
+**Action:** Use pre-allocated string concatenation (`+=`) in a traditional `for` loop for high-frequency UI updates to avoid unnecessary memory allocations.
