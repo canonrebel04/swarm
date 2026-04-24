@@ -34,7 +34,7 @@
 
         <div class="panel" id="fleet-panel">
             <div class="panel-title">Active Fleet</div>
-            <div class="scroll-area" id="agent-cards-container" role="list">
+            <div class="scroll-area" id="agent-cards-container" role="list" tabindex="0" aria-label="Active agents list">
                 <!-- Agent cards injected here -->
                 <div style="text-align: center; padding: 2rem; color: var(--text-dim);">
                     <div aria-hidden="true" style="font-size: 2.5rem; margin-bottom: 1rem;">🤖</div>
@@ -46,7 +46,7 @@
 
         <div class="panel" id="graph-panel">
             <div class="panel-title">Task Graph (DAG)</div>
-            <div class="scroll-area" id="task-graph-container" style="display: flex; align-items: center; justify-content: center;">
+            <div class="scroll-area" id="task-graph-container" style="display: flex; align-items: center; justify-content: center;" tabindex="0" aria-label="Task dependency graph">
                 <!-- SVG Graph injected here -->
                 <div style="text-align: center; padding: 2rem; color: var(--text-dim);">
                     <div aria-hidden="true" style="font-size: 2.5rem; margin-bottom: 1rem;">📊</div>
@@ -79,7 +79,7 @@
 
         <div class="panel" id="event-panel" style="grid-column: 1 / -1;">
             <div class="panel-title">System Event Stream</div>
-            <div class="scroll-area" id="event-log" role="log" aria-live="polite" aria-atomic="false">
+            <div class="scroll-area" id="event-log" role="log" aria-live="polite" aria-atomic="false" tabindex="0" aria-label="System event log">
                 <!-- Live logs -->
                 <div style="text-align: center; padding: 2rem; color: var(--text-dim);">
                     <div aria-hidden="true" style="font-size: 2.5rem; margin-bottom: 1rem;">📡</div>
