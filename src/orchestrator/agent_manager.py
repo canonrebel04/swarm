@@ -5,7 +5,7 @@ Agent manager for tracking and managing active agents.
 import asyncio
 import uuid
 from dataclasses import dataclass
-from typing import AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from ..runtimes.base import AgentConfig, AgentRuntime, AgentStatus
 from ..runtimes.registry import registry
@@ -27,12 +27,12 @@ class AgentInfo:
 class AgentManager:
     """Manage the fleet of active agents."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._agents: Dict[str, AgentInfo] = {}
         self._lock = asyncio.Lock()
-        self._on_spawn_callbacks = []
-        self._on_state_change_callbacks = []
-        self._on_kill_callbacks = []
+        self._on_spawn_callbacks: List[Any] = []
+        self._on_state_change_callbacks: List[Any] = []
+        self._on_kill_callbacks: List[Any] = []
 
     def register_spawn_callback(self, callback):
         """Register a callback to be called when an agent is spawned."""
@@ -109,7 +109,7 @@ class AgentManager:
             agent_info = self._agents.get(session_id)
             if not agent_info:
                 return None
-            
+
         # Get fresh status from runtime outside the lock
         try:
             fresh_status = await agent_info.runtime_instance.get_status(session_id)
@@ -119,7 +119,7 @@ class AgentManager:
                 # Double check the agent hasn't been deleted while we were yielding
                 if session_id not in self._agents:
                     return fresh_status
-                
+
                 # Check if state actually changed inside the lock to prevent race conditions
                 state_changed = fresh_status.state != agent_info.status.state
 
@@ -262,12 +262,12 @@ class AgentManager:
         # Make a copy of the keys to avoid modifying dict during iteration
         session_ids = list(self._agents.keys())
 
-        for session_id in session_ids:
-            try:
-                await self.kill_agent(session_id)
-            except Exception:
-                # Continue with cleanup even if individual agents fail
-                pass
+        # ⚡ Bolt Optimization: Use asyncio.gather to parallelize termination
+        # of multiple agents instead of awaiting them sequentially in a loop.
+        await asyncio.gather(
+            *[self.kill_agent(session_id) for session_id in session_ids],
+            return_exceptions=True,
+        )
 
 
 # Global agent manager instance

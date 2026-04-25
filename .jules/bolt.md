@@ -49,3 +49,6 @@
 ## 2024-04-22 - EventBus Lock Optimization
 **Learning:** Found a major concurrency bottleneck in `src/messaging/event_bus.py` where `_notify_subscribers` held an `asyncio.Lock` while iterating through and awaiting potentially slow I/O-bound callbacks. This blocked all other tasks from publishing events, subscribing, or unsubscribing, significantly slowing down the event bus throughput and responsiveness.
 **Action:** Narrowed the lock's scope to only safely copy the lists of callbacks, executing them outside the lock to unblock concurrent event processing.
+## 2024-05-18 - Parallelize Agent Cleanup
+**Learning:** Found an N+1 sequential bottleneck in `AgentManager.cleanup_all()` where each agent termination was awaited in a `for` loop. Terminating an agent is an I/O bound operation that can take time (e.g. killing processes or network requests). Sequential awaits block the event loop needlessly.
+**Action:** Always replace sequential awaits for independent operations in a loop with `asyncio.gather(*[...], return_exceptions=True)` to parallelize I/O and significantly reduce total latency.
