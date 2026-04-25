@@ -34,3 +34,7 @@
 ## 2026-04-21 - Global Keyboard Shortcuts Discoverability
 **Learning:** Adding global keyboard shortcuts (like `/` to focus search or input) improves power user efficiency, but users will not discover them if there are no visual cues. Additionally, event listeners for shortcuts must check `document.activeElement` to prevent the shortcut key from interfering with regular typing in other inputs or textareas.
 **Action:** Always pair global keyboard shortcuts with a visually distinct `<kbd>` hint near the target element or in a prominent location, and ensure the event listener explicitly ignores keystrokes when the user is already typing in an input field.
+
+## 2026-04-25 - Keyboard Accessibility for Custom Scrollable Containers
+**Learning:** Custom scrollable containers (using `overflow: auto` or similar) are not inherently keyboard accessible. Users relying on keyboards cannot scroll these areas unless they can focus them.
+**Action:** Always add `tabindex="0"` and an `aria-label` to custom scrollable containers. Additionally, use a negative `outline-offset` on the container's `:focus-visible` state to ensure the focus ring remains fully visible and isn't clipped by the container bounds.
