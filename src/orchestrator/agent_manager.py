@@ -262,12 +262,12 @@ class AgentManager:
         # Make a copy of the keys to avoid modifying dict during iteration
         session_ids = list(self._agents.keys())
 
-        for session_id in session_ids:
-            try:
-                await self.kill_agent(session_id)
-            except Exception:
-                # Continue with cleanup even if individual agents fail
-                pass
+        # ⚡ Bolt Optimization: Use asyncio.gather to parallelize I/O-bound kill operations
+        # instead of killing agents sequentially in a blocking for-loop.
+        await asyncio.gather(
+            *[self.kill_agent(session_id) for session_id in session_ids],
+            return_exceptions=True
+        )
 
 
 # Global agent manager instance
