@@ -38,3 +38,7 @@
 ## 2026-04-22 - Custom Scrollable Container Accessibility
 **Learning:** Custom scrollable containers (e.g., using `overflow: auto`) are not natively focusable. For keyboard users to scroll them, they need `tabindex="0"` and an `aria-label`. Furthermore, standard focus outlines on scrollable containers are often clipped by the container's bounds.
 **Action:** When creating custom scrollable containers, always add `tabindex="0"` and an `aria-label` for keyboard accessibility, and use a negative `outline-offset` on their `:focus-visible` state to ensure the focus ring remains fully visible.
+
+## 2024-05-26 - Inline SVG Decorative Accessibility
+**Learning:** Decorative inline SVG elements (like loading spinners) within buttons that already use `aria-busy` or other state indicators can confuse screen readers if not properly hidden. Screen readers may attempt to read the SVG's inner `<circle>` or `<path>` details.
+**Action:** Always ensure that decorative inline SVGs used for visual feedback (like loading spinners) include the `aria-hidden="true"` attribute so they are safely ignored by assistive technologies, relying entirely on the parent element's ARIA attributes (e.g. `aria-busy="true"`) for semantic meaning.
