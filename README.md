@@ -19,22 +19,38 @@ Swarm is a distributed multi-agent system for orchestrating autonomous AI agents
    cd swarm
    ```
 
-2. Install dependencies:
+2. Create a virtual environment and install:
    ```bash
+   python -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements.txt
+   ```
+
+   Or with Poetry:
+   ```bash
+   poetry install
    ```
 
 3. Set environment variables:
    ```bash
-   export SWARM_API_KEY=your_secret_key
+   export SWARM_API_KEY=your-secret-key
    ```
 
-4. Start the server:
+4. Verify installation:
    ```bash
-   python src/api/server.py
+   swarm --help
    ```
 
-5. Open the dashboard at `http://localhost:8000`
+5. Launch the TUI:
+   ```bash
+   swarm tui
+   ```
+   Or start the API server:
+   ```bash
+   swarm serve
+   ```
+
+6. Open the dashboard at `http://localhost:8000/dashboard`
 
 ## Documentation
 

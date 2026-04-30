@@ -14,8 +14,13 @@ class RuntimeRegistry:
 
     def register(self, runtime_class: Type[AgentRuntime]) -> None:
         """Register a new runtime class."""
-        runtime_name = runtime_class().runtime_name
-        self._runtimes[runtime_name] = runtime_class
+        try:
+            instance = runtime_class()
+            runtime_name = instance.runtime_name
+            self._runtimes[runtime_name] = runtime_class
+        except Exception as e:
+            # Runtime not available (e.g. Docker daemon not running, binary missing)
+            pass
 
     def get(self, runtime_name: str) -> Type[AgentRuntime]:
         """Get a runtime class by name."""

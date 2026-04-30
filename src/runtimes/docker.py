@@ -12,10 +12,15 @@ class DockerRuntime(RemoteAgentRuntime):
     """
 
     def __init__(self) -> None:
-        self._client = docker.from_env()
+        self._client = None  # lazy — only connect when needed
         self._containers: dict[str, docker.models.containers.Container] = {}
         self._configs:    dict[str, AgentConfig] = {}
         self._last_output: dict[str, str] = {}
+
+    def _get_client(self):
+        if self._client is None:
+            self._client = docker.from_env()
+        return self._client
 
     @property
     def runtime_name(self) -> str:
@@ -43,7 +48,7 @@ class DockerRuntime(RemoteAgentRuntime):
         }
 
         # Run agent command in container
-        container = self._client.containers.run(
+        container = self._get_client().containers.run(
             image,
             command=f"vibe -p '{config.task}'",
             volumes=volumes,
