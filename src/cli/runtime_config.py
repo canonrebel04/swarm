@@ -65,7 +65,9 @@ class RuntimeConfig:
                     'api_url': 'https://api.anthropic.com',
                     'models_endpoint': '/v1/models'
                 }
-            }
+            },
+            # User-configured OpenAI-compatible providers (set via `swarm setup`)
+            'providers': {}
         }
     
     def save_config(self) -> None:
@@ -110,7 +112,16 @@ class RuntimeConfig:
         """Scan provider API for available models."""
         provider_config = self.config.get('model_providers', {}).get(provider)
         if not provider_config:
-            return None
+            # Also check custom providers
+            custom = self.config.get('providers', {}).get(provider)
+            if custom:
+                provider_config = {
+                    'api_url': custom['base_url'],
+                    'models_endpoint': '/v1/models',
+                    'api_key_env': custom.get('api_key_env'),
+                }
+            else:
+                return None
         
         try:
             api_url = provider_config['api_url']
@@ -119,11 +130,20 @@ class RuntimeConfig:
             # Validate URL
             if not self._is_valid_url(api_url):
                 return None
-            
+
+            headers = {'Accept': 'application/json'}
+            # Add auth header for custom providers
+            api_key_env = provider_config.get('api_key_env')
+            if api_key_env:
+                import os as _os
+                api_key = _os.environ.get(api_key_env)
+                if api_key:
+                    headers['Authorization'] = f'Bearer {api_key}'
+
             response = requests.get(
                 f"{api_url}{models_endpoint}",
                 timeout=5,
-                headers={'Accept': 'application/json'}
+                headers=headers
             )
             
             if response.status_code == 200:
@@ -144,6 +164,10 @@ class RuntimeConfig:
         except ValueError:
             return False
     
+    def get_openai_compat_providers(self) -> dict:
+        """Get all OpenAI-compatible providers from config."""
+        return self.config.get('providers', {})
+
     def list_models_with_sources(self) -> List[Dict]:
         """List all models with their sources (configured or scanned)."""
         models = []
@@ -169,7 +193,19 @@ class RuntimeConfig:
                         'source': f'{provider}_api',
                         'status': 'available'
                     })
-        
+
+        # Add custom OpenAI-compatible providers
+        for provider_name, cfg in self.config.get('providers', {}).items():
+            provider_models = self.scan_provider_models(provider_name)
+            if provider_models:
+                for model in provider_models:
+                    models.append({
+                        'runtime': provider_name,
+                        'model': model.get('id', 'unknown'),
+                        'source': f'{provider_name} ({cfg.get("base_url", "custom")})',
+                        'status': 'available'
+                    })
+
         return models
     
     def interactive_config(self) -> None:

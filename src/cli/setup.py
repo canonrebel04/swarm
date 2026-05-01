@@ -45,7 +45,7 @@ PROVIDER_CATALOG = [
     ("Google     · gemini-2.5-flash     (fast)",           "gemini",      "gemini-2.5-flash",          "GOOGLE_API_KEY"),
     ("Mistral    · (fetch dynamic list via API)",          "vibe",        "__dynamic__",               "MISTRAL_API_KEY"),
     ("Ollama     · (fetch local models via API)",          "hermes",      "__dynamic__",               None),
-    ("Custom     · enter manually...",                     "__custom__",  "",                          None),
+    ("OpenAI-compat · any v1 API (OpenRouter/Groq/vLLM)",  "__openai_compat__", "__dynamic__",          None),
 ]
 
 CONFIG_PATH = Path("config.yaml")
@@ -123,6 +123,9 @@ async def _run_setup_async() -> None:
 
     label, runtime_key, model_str, env_var = PROVIDER_CATALOG[choice]
 
+    # Store custom provider config (populated by __openai_compat__ branch)
+    _openai_compat_config: dict = {}
+
     # ── Handle Dynamic Model List ──────────────────────────────────────────
     if model_str == "__dynamic__":
         print()
@@ -144,6 +147,27 @@ async def _run_setup_async() -> None:
             models = await _fetch_models_via_api("https://api.openai.com", api_key, FALLBACK_OPENAI)
         elif runtime_key == "hermes":
             models = await _fetch_models_via_api("http://localhost:11434", "ollama", FALLBACK_OLLAMA)
+        elif runtime_key == "__openai_compat__":
+            # Collect base_url + api_key for arbitrary OpenAI-compatible endpoint
+            print()
+            print(_bold("  Configure OpenAI-compatible endpoint"))
+            print(_dim("  Supports: OpenRouter, Groq, Together, DeepSeek, vLLM, etc."))
+            print()
+            base_url = input("  Base URL (e.g. https://api.openrouter.ai): ").strip()
+            if not base_url:
+                print("  Aborted — base URL required.")
+                return
+            base_url = base_url.rstrip("/")
+            api_key = _secure_input("  API Key (Enter to skip): ")
+            env_var_name = input("  Env var name [OPENAI_COMPAT_KEY]: ").strip() or "OPENAI_COMPAT_KEY"
+            if api_key:
+                _write_env_file(env_var_name, api_key)
+            # Fetch models
+            print(_dim(f"  Fetching models from {base_url}/v1/models..."))
+            models = await _fetch_models_via_api(base_url, api_key, ["default"])
+            # Store provider config for saving later
+            _openai_compat_config["base_url"] = base_url
+            _openai_compat_config["api_key_env"] = env_var_name
         else:
             models = ["default"]
 
@@ -232,13 +256,26 @@ async def _run_setup_async() -> None:
     if runtime_key not in cfg["runtimes"] and runtime_key != "__custom__":
         cfg["runtimes"][runtime_key] = _default_runtime_block(runtime_key)
 
+    # Save OpenAI-compatible provider config if configured
+    if _openai_compat_config:
+        if "providers" not in cfg:
+            cfg["providers"] = {}
+        cfg["providers"]["openai_compat"] = {
+            **_openai_compat_config,
+            "model": model_str,
+        }
+
     _write_config(cfg)
     print()
     print(_green("╔══════════════════════════════════════════════════════╗"))
     print(_green("║  ✓  Configuration saved to config.yaml               ║"))
     print(_green("╚══════════════════════════════════════════════════════╝"))
     print()
-    print(f"  Overseer: {_cyan(runtime_key)} / {_cyan(model_str)}")
+    if _openai_compat_config:
+        print(f"  Provider: {_cyan('OpenAI-compatible')} @ {_cyan(_openai_compat_config['base_url'])}")
+        print(f"  Model:    {_cyan(model_str)}")
+    else:
+        print(f"  Overseer: {_cyan(runtime_key)} / {_cyan(model_str)}")
     print(f"  Run {_bold('swarm')} to launch.\n")
 
 
@@ -313,5 +350,6 @@ def _default_runtime_block(runtime_key: str) -> dict:
         "hermes":      {"binary": "hermes",       "programmatic_flag": "chat -q", "output_format": "text"},
         "opencode":    {"binary": "opencode",     "programmatic_flag": "run",     "output_format": "stream-json"},
         "openclaw":    {"binary": "openclaw",     "programmatic_flag": "agent",   "output_format": "json"},
+        "__openai_compat__": {"binary": "vibe",  "programmatic_flag": "-p",     "output_format": "streaming"},
     }
     return defaults.get(runtime_key, {"binary": runtime_key, "output_format": "text"})
