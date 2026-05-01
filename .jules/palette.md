@@ -42,3 +42,6 @@
 ## 2024-05-26 - Inline SVG Decorative Accessibility
 **Learning:** Decorative inline SVG elements (like loading spinners) within buttons that already use `aria-busy` or other state indicators can confuse screen readers if not properly hidden. Screen readers may attempt to read the SVG's inner `<circle>` or `<path>` details.
 **Action:** Always ensure that decorative inline SVGs used for visual feedback (like loading spinners) include the `aria-hidden="true"` attribute so they are safely ignored by assistive technologies, relying entirely on the parent element's ARIA attributes (e.g. `aria-busy="true"`) for semantic meaning.
+## 2026-05-01 - Provide Explicit Feedback for Transient States
+**Learning:** For transient button states involving an async action (e.g. `aria-busy` with a spinner while a network request runs), returning the button to its initial state isn't enough. It can leave the user uncertain if the action succeeded or failed.
+**Action:** Pair all transient interactions with clear final-outcome feedback, such as toast notifications or alerts, to close the interaction loop securely.
