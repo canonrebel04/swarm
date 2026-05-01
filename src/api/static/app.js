@@ -199,8 +199,10 @@ async function agentAction(event, sessionId, action) {
         });
         const data = await res.json();
         console.log(`Action ${action} result:`, data);
+        showToast(`Successfully performed ${action} on agent`, 'success');
     } catch (e) {
         console.error(`Failed to perform ${action}:`, e);
+        showToast(`Failed to perform ${action}`, 'error');
     } finally {
         if (button) {
             button.disabled = false;
@@ -208,6 +210,32 @@ async function agentAction(event, sessionId, action) {
             button.innerHTML = originalHTML;
         }
     }
+}
+
+// --- 5. Toast Notifications ---
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+
+    // Add icon based on type
+    const icon = type === 'success' ? '✅' : '❌';
+    toast.innerHTML = `<span aria-hidden="true">${icon}</span> <span>${message}</span>`;
+
+    container.appendChild(toast);
+
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.add('fade-out');
+        // Wait for animation to finish before removing from DOM
+        setTimeout(() => {
+            if (toast.parentElement) {
+                toast.parentElement.removeChild(toast);
+            }
+        }, 300);
+    }, 3000);
 }
 
 function renderEventLog() {
