@@ -155,11 +155,11 @@ function renderAgentCards() {
             </div>
             
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                <div style="width: 8px; height: 8px; border-radius: 50%; background: ${a.state === 'running' ? 'var(--success)' : 'var(--warn)'}; box-shadow: 0 0 5px ${a.state === 'running' ? 'var(--success)' : 'var(--warn)'};"></div>
+                <div aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: ${a.state === 'running' ? 'var(--success)' : 'var(--warn)'}; box-shadow: 0 0 5px ${a.state === 'running' ? 'var(--success)' : 'var(--warn)'};"></div>
                 <span style="font-size: 0.85rem; font-weight: bold; letter-spacing: 0.05em;">${a.state.toUpperCase()}</span>
             </div>
 
-            <div title="${a.current_task.replace(/"/g, '&quot;')}" style="font-size: 0.85rem; margin-bottom: 15px; color: var(--text); line-height: 1.4; background: var(--bg); padding: 8px; border-radius: 4px; border-left: 3px solid var(--accent); cursor: help;">
+            <div tabindex="0" aria-label="${a.current_task.replace(/"/g, '&quot;')}" title="${a.current_task.replace(/"/g, '&quot;')}" style="font-size: 0.85rem; margin-bottom: 15px; color: var(--text); line-height: 1.4; background: var(--bg); padding: 8px; border-radius: 4px; border-left: 3px solid var(--accent); cursor: help;">
                 ${a.current_task.substring(0, 120)}${a.current_task.length > 120 ? '...' : ''}
             </div>
 
