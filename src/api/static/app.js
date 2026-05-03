@@ -114,7 +114,7 @@ function connectWebSocket() {
 function renderUI(property) {
     if (property === 'connection') {
         const el = document.getElementById('connection-status');
-        el.textContent = state.connection === 'online' ? '🟢 ONLINE' : '🔴 OFFLINE';
+        el.innerHTML = state.connection === 'online' ? '<span aria-hidden="true">🟢</span> ONLINE' : '<span aria-hidden="true">🔴</span> OFFLINE';
         el.className = `badge ${state.connection}`;
     }
 
@@ -155,7 +155,7 @@ function renderAgentCards() {
             </div>
             
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                <div style="width: 8px; height: 8px; border-radius: 50%; background: ${a.state === 'running' ? 'var(--success)' : 'var(--warn)'}; box-shadow: 0 0 5px ${a.state === 'running' ? 'var(--success)' : 'var(--warn)'};"></div>
+                <div aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: ${a.state === 'running' ? 'var(--success)' : 'var(--warn)'}; box-shadow: 0 0 5px ${a.state === 'running' ? 'var(--success)' : 'var(--warn)'};"></div>
                 <span style="font-size: 0.85rem; font-weight: bold; letter-spacing: 0.05em;">${a.state.toUpperCase()}</span>
             </div>
 

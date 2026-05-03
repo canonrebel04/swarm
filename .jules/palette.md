@@ -45,3 +45,7 @@
 ## 2026-05-01 - Provide Explicit Feedback for Transient States
 **Learning:** For transient button states involving an async action (e.g. `aria-busy` with a spinner while a network request runs), returning the button to its initial state isn't enough. It can leave the user uncertain if the action succeeded or failed.
 **Action:** Pair all transient interactions with clear final-outcome feedback, such as toast notifications or alerts, to close the interaction loop securely.
+
+## 2024-05-27 - Hide Redundant Visual Status Indicators
+**Learning:** Screen readers announce purely visual status indicators (like colored dots or emojis) if they are not explicitly hidden, creating redundant and confusing noise when explicit status text is right next to it.
+**Action:** Apply `aria-hidden="true"` to purely visual status elements when explicit text representation is present to keep the screen reader experience clean and focused.
