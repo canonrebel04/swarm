@@ -231,16 +231,18 @@ class Coordinator:
 
         ready_tasks = self._get_ready_tasks()
 
+        current_count = await agent_manager.get_agent_count()
+
         for task in ready_tasks:
             if task.potential_conflict:
                 continue
 
-            current_count = await agent_manager.get_agent_count()
             if current_count >= 5:
                 break
 
             task.status = "active"
             asyncio.create_task(self.assign_task(task))
+            current_count += 1
 
             if hasattr(self, "_push_event_callback") and self._push_event_callback:
                 self._push_event_callback(
