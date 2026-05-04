@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import asyncio
 import os
+import shutil
 from typing import List, Optional
 from dataclasses import dataclass
 
@@ -224,10 +225,6 @@ class Overseer:
                 "files_in_scope": [],
             },
         ]
-
-
-# Avoid importing shutil at module level to keep import overhead low
-import shutil
 
 
 def create_overseer(config: Optional[dict] = None) -> Overseer:
