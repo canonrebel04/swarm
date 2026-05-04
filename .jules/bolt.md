@@ -49,3 +49,6 @@
 ## 2024-04-22 - EventBus Lock Optimization
 **Learning:** Found a major concurrency bottleneck in `src/messaging/event_bus.py` where `_notify_subscribers` held an `asyncio.Lock` while iterating through and awaiting potentially slow I/O-bound callbacks. This blocked all other tasks from publishing events, subscribing, or unsubscribing, significantly slowing down the event bus throughput and responsiveness.
 **Action:** Narrowed the lock's scope to only safely copy the lists of callbacks, executing them outside the lock to unblock concurrent event processing.
+## 2024-05-19 - Dynamically Checking Global Limits in Loops
+**Learning:** Found an issue where a dynamically checked global limit (`agent_manager.get_agent_count()`) was awaited inside a loop to spawn agents. Since `get_agent_count()` acquires a lock, this created an N+1 lock acquisition bottleneck and potential race condition.
+**Action:** When spawning async tasks within a loop based on a dynamically checked global limit, fetch the current count once *before* the loop and update it locally during iteration to prevent N+1 lock acquisitions and race conditions that could exceed the limit.
