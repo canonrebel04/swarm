@@ -114,7 +114,7 @@ function connectWebSocket() {
 function renderUI(property) {
     if (property === 'connection') {
         const el = document.getElementById('connection-status');
-        el.textContent = state.connection === 'online' ? '🟢 ONLINE' : '🔴 OFFLINE';
+        el.innerHTML = state.connection === 'online' ? '<span aria-hidden="true">🟢</span> ONLINE' : '<span aria-hidden="true">🔴</span> OFFLINE';
         el.className = `badge ${state.connection}`;
     }
 
